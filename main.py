@@ -43,7 +43,7 @@ warnings.filterwarnings("ignore", category=UserWarning)
 
 # DATABASE CONNECTION
 DB_USER = "postgres"
-DB_PASS = "Database@123"
+DB_PASS = "Database%40123"
 DB_HOST = "34.100.141.55"
 DB_PORT = "5432"
 DB_NAME = "HO_IFRC_ARG"
