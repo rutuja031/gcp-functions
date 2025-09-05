@@ -1,0 +1,8 @@
+pandas
+requests
+rapidfuzz
+numpy
+sqlalchemy
+psycopg2-binary
+scikit-learn
+xgboost
