@@ -36,32 +36,68 @@ logging.basicConfig(level=logging.INFO)
 # Import your custom functions
 from insert_data_into_tables import (load_temperature_pressure_data,insert_daily_temperature,insert_forecast_temperature)
 
-# DATABASE CONNECTION
-DB_USER = "postgres"
-DB_PASS = "Database%40123"
-DB_HOST = "34.100.141.55"
-DB_PORT = "5432"
-DB_NAME = "HO_IFRC_ARG"
+# # DATABASE CONNECTION
+# DB_USER = "postgres"
+# DB_PASS = "Database%40123"
+# DB_HOST = "34.100.141.55"
+# DB_PORT = "5432"
+# DB_NAME = "HO_IFRC_ARG"
 
-DB_URL = (
-    f"postgresql+psycopg2://{DB_USER}:{DB_PASS}"
-    f"@{DB_HOST}:{DB_PORT}/{DB_NAME}"
-)
+# DB_URL = (
+#     f"postgresql+psycopg2://{DB_USER}:{DB_PASS}"
+#     f"@{DB_HOST}:{DB_PORT}/{DB_NAME}"
+# )
 
-engine = create_engine(DB_URL)     
+# engine = create_engine(DB_URL)     
     
+# def daily_schedule(event, context):
+#     """
+#     Cloud Function triggered by Pub/Sub for daily jobs.
+#     """
+#     logging.info("✅ Daily schedule triggered")
+
+#     try:
+#         load_temperature_pressure_data()
+#         insert_daily_temperature()
+#         insert_forecast_temperature()
+#         logging.info("✅ Daily job completed successfully")
+#         return "Success"
+#     except Exception as e:
+#         logging.error(f"❌ Error during daily job: {e}")
+#         raise
+    
+
 def daily_schedule(event, context):
     """
     Cloud Function triggered by Pub/Sub for daily jobs.
     """
-    logging.info("✅ Daily schedule triggered")
+    logging.info("Daily schedule triggered")
 
     try:
+        DB_USER = "postgres"
+        DB_PASS = "Database%40123"
+        DB_HOST = "34.100.141.55"
+        DB_PORT = "5432"
+        DB_NAME = "HO_IFRC_ARG"
+      
+        if not all([DB_USER, DB_PASS, DB_HOST, DB_PORT, DB_NAME]):
+            raise ValueError("One or more DB environment variables are missing")
+
+        DB_URL = (
+            f"postgresql+psycopg2://{DB_USER}:{DB_PASS}"
+            f"@{DB_HOST}:{DB_PORT}/{DB_NAME}"
+        )
+        engine = create_engine(DB_URL)
+
+        # Run your data pipeline
         load_temperature_pressure_data()
         insert_daily_temperature()
         insert_forecast_temperature()
-        logging.info("✅ Daily job completed successfully")
+
+        logging.info("Daily job completed successfully")
         return "Success"
+
     except Exception as e:
-        logging.error(f"❌ Error during daily job: {e}")
+        logging.error(f"Error during daily job: {e}")
         raise
+
