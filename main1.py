@@ -30,6 +30,7 @@ from xgboost import XGBRegressor
 from sqlalchemy import create_engine, text
 import warnings
 warnings.filterwarnings("ignore", category=UserWarning)
+
 from insert_data_into_tables import load_temperature_pressure_data, insert_daily_temperature, insert_forecast_temperature
 
 # DATABASE CONNECTION
@@ -43,14 +44,9 @@ DB_URL = (
     f"postgresql+psycopg2://{DB_USER}:{DB_PASS}"
     f"@{DB_HOST}:{DB_PORT}/{DB_NAME}"
 )
-
-# DB_URL = (
-#     f"postgresql+psycopg2://{os.environ['DB_USER']}:{os.environ['DB_PASS']}"
-#     f"@{os.environ['DB_HOST']}:{os.environ['DB_PORT']}/{os.environ['DB_NAME']}"
-# )
 engine = create_engine(DB_URL)
 
-# STEP 1: FETCH DAILY TEMPERATURE DATA  #--------------------------------------------------
+# # STEP 1: FETCH DAILY TEMPERATURE DATA
 # def insert_daily_temperature():
 #     try:
 #         print("Starting daily temperature data fetch...")
@@ -165,7 +161,7 @@ engine = create_engine(DB_URL)
 #         print(f"Error in insert_daily_temperature: {e}")
 
 
-# # STEP 2: FORECAST TEMPERATURE # ----------------------------------------
+# # STEP 2: FORECAST TEMPERATURE
 # def insert_forecast_temperature():
 #     try:
 #         forecast_days = 7
@@ -344,15 +340,33 @@ engine = create_engine(DB_URL)
 
 #     except Exception as e:
 #         print(f"Error in run_all_temp: {str(e)}")
-        
-        
-def daily_schedule(event, context):
-    """
-    Cloud Function triggered by Pub/Sub for daily jobs.
-    """
-    print("Daily schedule triggered")
-    load_temperature_pressure_data()
-    insert_daily_temperature()
-    insert_forecast_temperature()
-    return "Daily job completed successfully"
+    
+# main.py
+
+# def daily_schedule(event, context):
+#     """
+#     Cloud Function triggered by Pub/Sub for daily jobs.
+#     """
+#     print("Daily schedule triggered")
+#     load_temperature_pressure_data()
+#     insert_daily_temperature()
+#     insert_forecast_temperature()
+#     return "Daily job completed successfully"
+
+# def monthly_schedule(event, context):
+#     """
+#     Cloud Function triggered by Pub/Sub for monthly jobs.
+#     """
+#     print("Monthly schedule triggered")
+#     insert_monthly()
+#     return "Monthly job completed successfully"
+
+# def yearly_schedule(event, context):
+#     """
+#     Cloud Function triggered by Pub/Sub for yearly jobs.
+#     """
+#     print("Yearly schedule triggered")
+#     insert_yearly()
+#     return "Yearly job completed successfully"
+
     
