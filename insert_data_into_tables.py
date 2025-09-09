@@ -697,6 +697,139 @@ def insert_forecast_temperature():   ## for daily
     except Exception as e:
         print(f"Error in insert_forecast_temperature: {e}")
 
+def insert_forecast_pressure():  ## for daly
+    try:
+        forecast_days = 7
+        lags = 7
+
+        models = {
+            'LinearRegression': LinearRegression(),
+            'RandomForest': RandomForestRegressor(n_estimators=100, random_state=42),
+            'XGBoost': XGBRegressor(n_estimators=100, random_state=42),
+            'ExtraTrees': ExtraTreesRegressor(n_estimators=100, random_state=42)
+        }
+        station_codes = pd.read_sql("SELECT DISTINCT station_code FROM pressure", engine)['station_code'].dropna().tolist()
+        all_forecasts = []
+
+        for station_code in station_codes:
+            try:
+                query = f"""
+                SELECT daily_date, station_code, pressure
+                FROM (
+                    SELECT daily_date, station_code, pressure
+                    FROM pressure
+                    WHERE station_code = %s AND measurement_type = 'A'
+                    ORDER BY daily_date DESC
+                ) sub
+                ORDER BY daily_date ASC
+                """
+                df = pd.read_sql(query, engine, params=(station_code,))
+                
+                if df.empty:
+                    print(f"Skipping {station_code} — no data for pressure")
+                    continue
+
+                df['daily_date'] = pd.to_datetime(df['daily_date'])
+                df['pressure'] = pd.to_numeric(df['pressure'], errors='coerce')
+                missing_count = df['pressure'].isna().sum()
+
+                if missing_count > 20:
+                    print(f"Skipping {station_code} — too many missing values in pressure ({missing_count})")
+                    continue
+                elif missing_count > 0:
+                    df['pressure'] = df['pressure'].ffill()
+
+                df.set_index('daily_date', inplace=True)
+
+                # --- Create lag features ---
+                for lag in range(1, lags + 1):
+                    df[f'lag_{lag}'] = df['pressure'].shift(lag)
+                df.dropna(inplace=True)
+
+                if len(df) < lags:
+                    continue
+
+                lag_cols = [f'lag_{i}' for i in range(1, lags + 1)]
+                X = df[lag_cols]
+                y = df['pressure']
+                split_index = int(len(df) * 0.8)
+                X_train, X_test = X.iloc[:split_index], X.iloc[split_index:]
+                y_train, y_test = y.iloc[:split_index], y.iloc[split_index:]
+
+                best_model = None
+                best_mape = float('inf')
+
+                for model_name, model in models.items():
+                    model.fit(X_train, y_train)
+                    y_pred = model.predict(X_test)
+                    nonzero_actual = y_test != 0
+                    if nonzero_actual.sum() == 0:
+                        continue
+                    mape = np.mean(np.abs((y_test[nonzero_actual] - y_pred[nonzero_actual]) / y_test[nonzero_actual])) * 100
+
+                    if mape < best_mape:
+                        best_mape = mape
+                        best_model = model
+
+                if not best_model:
+                    continue
+
+                last_known = df.iloc[-1:]
+                lags_list = [last_known['pressure'].values[0]] + last_known[lag_cols[:-1]].values.flatten().tolist()
+
+                preds = []
+                dates = []
+
+                for i in range(forecast_days):
+                    input_arr = np.array(lags_list[-lags:]).reshape(1, -1)
+                    pred = best_model.predict(input_arr)[0]
+                    next_date = df.index[-1] + pd.Timedelta(days=i + 1)
+                    preds.append(pred)
+                    dates.append(next_date)
+                    lags_list.append(pred)
+
+                forecast_df = pd.DataFrame({
+                    'daily_date': dates,
+                    'station_code': station_code,
+                    'pressure': preds,
+                    'measurement_type': 'F'
+                })
+
+                all_forecasts.append(forecast_df)
+
+            except Exception as e:
+                print(f"Error processing pressure for station {station_code}: {e}")
+                continue
+
+        if all_forecasts:
+            full_df = pd.concat(all_forecasts, ignore_index=True)
+
+            insert_query = """
+            INSERT INTO pressure (daily_date, station_code, pressure, measurement_type, created_at)
+            VALUES (:daily_date, :station_code, :pressure, :measurement_type, :created_at)
+            ON CONFLICT (daily_date, station_code) DO UPDATE
+            SET pressure = EXCLUDED.pressure,
+                measurement_type = EXCLUDED.measurement_type,
+                created_at = EXCLUDED.created_at;
+            """
+
+            with engine.begin() as conn:
+                for _, row in full_df.iterrows():
+                    conn.execute(text(insert_query), {
+                        'daily_date': row['daily_date'],
+                        'station_code': row['station_code'],
+                        'pressure': row['pressure'],
+                        'measurement_type': row['measurement_type'],
+                        'created_at': datetime.now()
+                    })
+
+            print("Pressure forecasts inserted into pressure table with measurement_type = 'F'.")
+        else:
+            print("No pressure forecasts generated—check for missing or insufficient data.")
+
+    except Exception as e:
+        print(f"Error in insert_forecast_pressure: {e}")
+     
 def load_hydro_data_to_database(file_path):
     try:
         df_hydro = pd.read_csv(file_path)[["cod_est", "fecha", "valor_indice"]].dropna()
