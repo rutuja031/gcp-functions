@@ -71,33 +71,37 @@ def daily_schedule(event, context):
     """
     Cloud Function triggered by Pub/Sub for daily jobs.
     """
-    logging.info("Daily schedule triggered")
+    if 'data' in event:
+        payload = json.loads(base64.b64decode(event['data']).decode('utf-8'))
+        print(payload)
+        
+        logging.info("Daily schedule triggered")
 
-    try:
-        DB_USER = "postgres"
-        DB_PASS = "Database%40123"
-        DB_HOST = "34.100.141.55"
-        DB_PORT = "5432"
-        DB_NAME = "HO_IFRC_ARG"
-      
-        if not all([DB_USER, DB_PASS, DB_HOST, DB_PORT, DB_NAME]):
-            raise ValueError("One or more DB environment variables are missing")
+        try:
+            DB_USER = "postgres"
+            DB_PASS = "Database%40123"
+            DB_HOST = "34.100.141.55"
+            DB_PORT = "5432"
+            DB_NAME = "HO_IFRC_ARG"
+        
+            if not all([DB_USER, DB_PASS, DB_HOST, DB_PORT, DB_NAME]):
+                raise ValueError("One or more DB environment variables are missing")
 
-        DB_URL = (
-            f"postgresql+psycopg2://{DB_USER}:{DB_PASS}"
-            f"@{DB_HOST}:{DB_PORT}/{DB_NAME}"
-        )
-        engine = create_engine(DB_URL)
+            DB_URL = (
+                f"postgresql+psycopg2://{DB_USER}:{DB_PASS}"
+                f"@{DB_HOST}:{DB_PORT}/{DB_NAME}"
+            )
+            engine = create_engine(DB_URL)
 
-        # Run your data pipeline
-        load_temperature_pressure_data()
-        insert_daily_temperature()
-        insert_forecast_temperature()
+            # Run your data pipeline
+            load_temperature_pressure_data()
+            insert_daily_temperature()
+            insert_forecast_temperature()
 
-        logging.info("Daily job completed successfully")
-        return "Success"
+            logging.info("Daily job completed successfully")
+            return "Success"
 
-    except Exception as e:
-        logging.error(f"Error during daily job: {e}")
-        raise
+        except Exception as e:
+            logging.error(f"Error during daily job: {e}")
+            raise
 
