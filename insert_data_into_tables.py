@@ -1,10 +1,10 @@
 import pandas as pd
-from sqlalchemy import create_engine
-from sqlalchemy import text
+from sqlalchemy import create_engine, text 
 import unicodedata
 import numpy as np
 import re
 import os
+import io
 from psycopg2.extras import execute_values
 import requests
 import zipfile
@@ -47,11 +47,10 @@ def clean_coldata(name):
         print(f"Error cleaning column data: {e}")
         return name
 
-def load_stations_data():
+def load_stations_data():   
     try:
-        # st_datafile = "C:\\Anjali\\Python_Self_Study\\Test_AI_Dashboard\\datafiles\\STATIONS _ estaciones smn PAIS.xlsx"
-        st_datafile = "datafiles\\STATIONS _ estaciones smn PAIS.xlsx"
-        st_threshold = "datafiles\\HEAT_COLD WAVES - OLAS_CALOR-FRIO.xlsx"
+        st_datafile = "gs://datafiles_bucket/STATIONS _ estaciones smn PAIS.xlsx"  ## GCS path
+        st_threshold = "gs://datafiles_bucket/HEAT_COLD WAVES - OLAS_CALOR-FRIO.xlsx" ## GCS path
         try:
             df_st = pd.read_excel(st_datafile, sheet_name='estaciones smn')[["NRO INT", "ESTACION", "PROVINCIA", "LAT ", "LONG", "ALT (m)"]].dropna()
             df_st.columns = ["station_code", "station_name", "province_name", "latitude", "longitude", "altitude"]
@@ -125,7 +124,7 @@ def load_stations_data():
             print(f"Error inserting into final stations table: {e}")
             return
 
-        print("✅ Stations Data Inserted")
+        print("Stations Data Inserted")
     except Exception as e:
         print(f"General error in load_stations_data: {e}")
         return
@@ -753,7 +752,7 @@ def load_hydro_data_to_database(file_path):
     finally:
         print("Finalizing load_data_to_database")       
         
-def load_hydro_droughts_data():
+def load_hydro_droughts_data():  ## change file path
     try:
         #scrape hydro drought data
         #scrape_hydro_drought_data()
@@ -833,7 +832,7 @@ def load_metero_data_to_database(file_path):
     finally:
         print("Finalizing load_data_to_database")     
         
-def load_metero_droughts_data():
+def load_metero_droughts_data():  ## change file path
     try:
         #scrape metero drought data
         #scrape_metero_drought_data()

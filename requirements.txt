@@ -8,3 +8,5 @@ scikit-learn
 xgboost
 rapidfuzz
 requests
+gcsfs
+google-cloud-storage
