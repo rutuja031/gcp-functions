@@ -61,14 +61,14 @@ def daily_schedule(event, context):
 
             # Run your data pipeline
             ## run all first to force run -----------
-            load_stations_data()
-            load_wildfires_data()
-            load_temperature_pressure_data()
-            insert_daily_temperature()
-            insert_forecast_temperature()
-            insert_forecast_pressure()
-            load_hydro_droughts_data()
-            load_metero_droughts_data()
+            # load_stations_data()
+            # load_wildfires_data()
+            # load_temperature_pressure_data()
+            # insert_daily_temperature()
+            # insert_forecast_temperature()
+            # insert_forecast_pressure() 
+            load_hydro_droughts_data()  #--remaining
+            load_metero_droughts_data() 
             load_indicator_categories_data()
             
             # ## run daily schedule--------------

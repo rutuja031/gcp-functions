@@ -15,6 +15,9 @@ from sklearn.ensemble import RandomForestRegressor, ExtraTreesRegressor
 from xgboost import XGBRegressor
 from google.cloud import storage
 
+# Initialize Google Cloud Storage client
+storage_client = storage.Client()
+
 
 # import scrape_hydro_drought_data
 # import scrape_metero_drought_data
@@ -830,14 +833,97 @@ def insert_forecast_pressure():  ## for daly
     except Exception as e:
         print(f"Error in insert_forecast_pressure: {e}")
      
+# def load_hydro_data_to_database(file_path):
+#     try:
+#         df_hydro = pd.read_csv(file_path)[["cod_est", "fecha", "valor_indice"]].dropna()
+#         df_hydro.columns = ["station_code", "daily_date", "drought_index"]
+#         df_hydro = normalize_columns(df_hydro)
+#         # print first few rows of data for a station
+#         print("Hydro Drought Data:", df_hydro.head())
+
+#         create_table_sql = """
+#             DROP TABLE IF EXISTS stg_hydro_droughts;  
+#             CREATE TABLE IF NOT EXISTS stg_hydro_droughts (        
+#                 station_code 	VARCHAR(20) NOT NULL,
+#                 daily_date 		DATE NOT NULL,
+#                 drought_index	NUMERIC,
+#                 PRIMARY KEY (station_code, daily_date)
+#             );
+#             """
+#         try:
+#             with engine.begin() as conn:
+#                 conn.execute(text(create_table_sql))
+#                 df_hydro.to_sql("stg_hydro_droughts", conn, if_exists="append", index=False)
+#         except Exception as e:
+#             print(f"Error loading hydro drought data: {e}")
+
+#         insert_final_hydro_table_sql ="""
+#             INSERT INTO hydrological_droughts (daily_date, station_code, value_index, measurement_type, risk_level)
+#                         SELECT s.daily_date, s.station_code, s.drought_index, 'A' AS measurement_type,
+#                         t.category::drought_risk_level_enum AS risk_level
+#                         FROM stg_hydro_droughts s
+#                         JOIN spi_thresholds t 
+#                         ON s.drought_index BETWEEN t.min_value AND t.max_value
+#         """
+
+#         try:
+#             with engine.begin() as conn:
+#                 # Check if there are any records in the staging table
+#                 result = conn.execute(text("SELECT COUNT(*) FROM stg_hydro_droughts"))
+#                 count = result.scalar()
+#                 # print("Station Codes:", df_temp_pres['station_code'].unique())
+#                 if count > 0:
+#                     conn.execute(text(insert_final_hydro_table_sql))
+#                     conn.commit()
+        
+#         except Exception as e:
+#             print(f"Error inserting into hydrological_droughts table: {e}")
+#             return
+
+#         print("Hydro Drought Data Inserted")
+#     except Exception as e:
+#         print(f"General error in load_data_to_database: {e}")
+#         return
+
+#     finally:
+#         print("Finalizing load_data_to_database")       
+        
+# def load_hydro_droughts_data():
+#     try:
+#         #scrape hydro drought data
+#         #scrape_hydro_drought_data()
+#         with engine.begin() as conn:
+#             # Delete data from hydrological_droughts before inserting the records
+#             conn.execute(text("DELETE FROM hydrological_droughts"))
+
+#         #load hydro drought data into database
+#          # for each file in the downloads_hydro directory, load the data into the database
+#         #download_dir = "datafiles\\downloads_hydro"  # Define the directory path
+#         download_dir = "gs://datafiles_bucket/downloads_hydro"
+#         #print count of all files in the directory
+#         print("Count of files in the directory:", len(os.listdir(download_dir)))
+#         for file in os.listdir(download_dir):
+#             if file.endswith(".csv"):
+#                 print("Loading file:", file)
+#                 file_path = os.path.join(download_dir, file)
+#                 load_hydro_data_to_database(file_path)
+
+#     except Exception as e:
+#         print(f"Error in load_hydro_droughts_data: {e}")
+
 def load_hydro_data_to_database(file_path):
     try:
+        # Read CSV and select required columns
         df_hydro = pd.read_csv(file_path)[["cod_est", "fecha", "valor_indice"]].dropna()
         df_hydro.columns = ["station_code", "daily_date", "drought_index"]
-        df_hydro = normalize_columns(df_hydro)
-        # print first few rows of data for a station
-        print("Hydro Drought Data:", df_hydro.head())
 
+        # Normalize column data (user-defined function)
+        df_hydro = normalize_columns(df_hydro)
+
+        # Print sample data for debugging
+        print("Hydro Drought Data Sample:\n", df_hydro.head())
+
+        # SQL to create staging table
         create_table_sql = """
             DROP TABLE IF EXISTS stg_hydro_droughts;  
             CREATE TABLE IF NOT EXISTS stg_hydro_droughts (        
@@ -846,79 +932,184 @@ def load_hydro_data_to_database(file_path):
                 drought_index	NUMERIC,
                 PRIMARY KEY (station_code, daily_date)
             );
-            """
+        """
+
+        # Create staging table and insert data
         try:
             with engine.begin() as conn:
                 conn.execute(text(create_table_sql))
                 df_hydro.to_sql("stg_hydro_droughts", conn, if_exists="append", index=False)
         except Exception as e:
-            print(f"Error loading hydro drought data: {e}")
+            print(f"Error loading hydro drought data to staging table: {e}")
+            return
 
-        insert_final_hydro_table_sql ="""
+        # SQL to insert data into final table
+        insert_final_hydro_table_sql = """
             INSERT INTO hydrological_droughts (daily_date, station_code, value_index, measurement_type, risk_level)
-                        SELECT s.daily_date, s.station_code, s.drought_index, 'A' AS measurement_type,
-                        t.category::drought_risk_level_enum AS risk_level
-                        FROM stg_hydro_droughts s
-                        JOIN spi_thresholds t 
-                        ON s.drought_index BETWEEN t.min_value AND t.max_value
+            SELECT s.daily_date, s.station_code, s.drought_index, 'A' AS measurement_type,
+                   t.category::drought_risk_level_enum AS risk_level
+            FROM stg_hydro_droughts s
+            JOIN spi_thresholds t 
+              ON s.drought_index BETWEEN t.min_value AND t.max_value;
         """
 
+        # Insert into final table only if staging has data
         try:
             with engine.begin() as conn:
-                # Check if there are any records in the staging table
                 result = conn.execute(text("SELECT COUNT(*) FROM stg_hydro_droughts"))
                 count = result.scalar()
-                # print("Station Codes:", df_temp_pres['station_code'].unique())
+                print(f"Staging table row count: {count}")
+
                 if count > 0:
                     conn.execute(text(insert_final_hydro_table_sql))
                     conn.commit()
-        
+                    print("Hydro drought data successfully inserted into final table.")
+                else:
+                    print("No data in staging table. Skipping final insert.")
+
         except Exception as e:
             print(f"Error inserting into hydrological_droughts table: {e}")
-            return
 
-        print("Hydro Drought Data Inserted")
     except Exception as e:
-        print(f"General error in load_data_to_database: {e}")
-        return
-
+        print(f"General error in load_hydro_data_to_database: {e}")
     finally:
-        print("Finalizing load_data_to_database")       
-        
+        print("Finalizing load_hydro_data_to_database")
+
 def load_hydro_droughts_data():
     try:
-        #scrape hydro drought data
-        #scrape_hydro_drought_data()
+        # Delete existing data from final table before new load
         with engine.begin() as conn:
-            # Delete data from hydrological_droughts before inserting the records
             conn.execute(text("DELETE FROM hydrological_droughts"))
+            print("Deleted existing records from hydrological_droughts")
 
-        #load hydro drought data into database
-         # for each file in the downloads_hydro directory, load the data into the database
-        #download_dir = "datafiles\\downloads_hydro"  # Define the directory path
-        download_dir = "gs://datafiles_bucket/downloads_hydro"
-        #print count of all files in the directory
-        print("Count of files in the directory:", len(os.listdir(download_dir)))
-        for file in os.listdir(download_dir):
-            if file.endswith(".csv"):
-                print("Loading file:", file)
-                file_path = os.path.join(download_dir, file)
-                load_hydro_data_to_database(file_path)
+        # GCS bucket and directory prefix
+        bucket_name = "datafiles_bucket"
+        prefix = "downloads_hydro/"
+
+        # List all files in the GCS folder
+        bucket = storage_client.bucket(bucket_name)
+        blobs = list(bucket.list_blobs(prefix=prefix))
+
+        print(f"Found {len(blobs)} files in GCS folder '{prefix}'")
+
+        # Process each CSV file
+        for blob in blobs:
+            if blob.name.endswith(".csv"):
+                print("Processing file:", blob.name)
+
+                # Download file to /tmp/ (Cloud Functions temp directory)
+                temp_path = f"/tmp/{os.path.basename(blob.name)}"
+                blob.download_to_filename(temp_path)
+                print(f"Downloaded {blob.name} to {temp_path}")
+
+                # Load into database
+                load_hydro_data_to_database(temp_path)
+
+                # Remove temp file to free space
+                os.remove(temp_path)
+                print(f"Removed temp file {temp_path}")
 
     except Exception as e:
         print(f"Error in load_hydro_droughts_data: {e}")
+        
+# def load_metero_data_to_database(file_path):
+#     try:
+#         df_metero = pd.read_csv(file_path)[["omm_id", "fecha", "valor_indice", "pentada_fin"]].dropna()
+
+#         df_metero.columns = ["station_code", "monthly_date", "drought_index", "pentada_end"]
+#         df_metero = normalize_columns(df_metero)
+#         # print first few rows of data for a station
+#         print("metero Drought Data:", df_metero.head())
+
+#         create_table_sql = """
+#             DROP TABLE IF EXISTS stg_metero_droughts;  
+#             CREATE TABLE IF NOT EXISTS stg_metero_droughts (        
+#                 station_code 	VARCHAR(20) NOT NULL,
+#                 monthly_date 	DATE NOT NULL,
+#                 drought_index	NUMERIC,
+#                 pentada_end     INTEGER,
+#                 PRIMARY KEY (station_code, monthly_date)
+#             );
+#             """
+#         try:
+#             with engine.begin() as conn:
+#                 conn.execute(text(create_table_sql))
+#                 df_metero.to_sql("stg_metero_droughts", conn, if_exists="append", index=False)
+#         except Exception as e:
+#             print(f"Error loading metero drought data: {e}")
+
+#         insert_final_metero_table_sql ="""
+#             INSERT INTO meterological_droughts (monthly_date, station_code, value_index, measurement_type, risk_level)
+#                         SELECT s.monthly_date, s.station_code, s.drought_index, 'A' AS measurement_type,
+#                         t.category::drought_risk_level_enum AS risk_level
+#                         FROM stg_metero_droughts s 
+#                         JOIN spi_thresholds t 
+#                         ON s.drought_index >= t.min_value AND s.drought_index < t.max_value
+#         """
+
+#         try:
+#             with engine.begin() as conn:
+#                 # Check if there are any records in the staging table
+#                 result = conn.execute(text("SELECT COUNT(*) FROM stg_metero_droughts"))
+#                 count = result.scalar()
+#                 # print("Station Codes:", df_temp_pres['station_code'].unique())
+#                 if count > 0:
+#                    # Insert/Append new records in meterological_droughts
+#                     conn.execute(text(insert_final_metero_table_sql))
+#                     conn.commit()
+        
+#         except Exception as e:
+#             print(f"Error inserting into meterological_droughts table: {e}")
+#             return
+
+#         print("Metero Drought Data Inserted")
+#     except Exception as e:
+#         print(f"General error in load_data_to_database: {e}")
+#         return
+
+#     finally:
+#         print("Finalizing load_data_to_database")     
+        
+# def load_metero_droughts_data(): 
+#     try:
+#         #scrape metero drought data
+#         #scrape_metero_drought_data()
+#         # Create a database connection
+#         with engine.begin() as conn:
+#             # Delete data from meterological_droughts before inserting the records
+#             conn.execute(text("DELETE FROM meterological_droughts"))
+            
+#         #load metero drought data into database
+#          # for each file in the downloads_hydro directory, load the data into the database
+#         #download_dir = "datafiles\\downloads_metero"  # Define the directory path
+#         download_dir = "gs://datafiles_bucket/downloads_metero"
+        
+#         #print count of all files in the directory
+#         print("Count of files in the directory:", len(os.listdir(download_dir)))
+#         for file in os.listdir(download_dir):
+#             if file.endswith(".csv"):
+#                 print("Loading file:", file)
+#                 file_path = os.path.join(download_dir, file)
+#                 load_metero_data_to_database(file_path)
+
+#     except Exception as e:
+#         print(f"Error in load_metero_droughts_data: {e}")
 
 def load_metero_data_to_database(file_path):
     try:
+        # Read the CSV and select required columns
         df_metero = pd.read_csv(file_path)[["omm_id", "fecha", "valor_indice", "pentada_fin"]].dropna()
-
         df_metero.columns = ["station_code", "monthly_date", "drought_index", "pentada_end"]
-        df_metero = normalize_columns(df_metero)
-        # print first few rows of data for a station
-        print("metero Drought Data:", df_metero.head())
 
+        # Optional: normalize data
+        df_metero = normalize_columns(df_metero)
+
+        # Print first few rows for debugging
+        print("Metero Drought Data Sample:\n", df_metero.head())
+
+        # SQL to create staging table
         create_table_sql = """
-            DROP TABLE IF EXISTS stg_metero_droughts;  
+            DROP TABLE IF EXISTS stg_metero_droughts;
             CREATE TABLE IF NOT EXISTS stg_metero_droughts (        
                 station_code 	VARCHAR(20) NOT NULL,
                 monthly_date 	DATE NOT NULL,
@@ -926,71 +1117,86 @@ def load_metero_data_to_database(file_path):
                 pentada_end     INTEGER,
                 PRIMARY KEY (station_code, monthly_date)
             );
-            """
+        """
+
+        # Create staging table and insert data
         try:
             with engine.begin() as conn:
                 conn.execute(text(create_table_sql))
                 df_metero.to_sql("stg_metero_droughts", conn, if_exists="append", index=False)
         except Exception as e:
-            print(f"Error loading metero drought data: {e}")
-
-        insert_final_metero_table_sql ="""
-            INSERT INTO meterological_droughts (monthly_date, station_code, value_index, measurement_type, risk_level)
-                        SELECT s.monthly_date, s.station_code, s.drought_index, 'A' AS measurement_type,
-                        t.category::drought_risk_level_enum AS risk_level
-                        FROM stg_metero_droughts s 
-                        JOIN spi_thresholds t 
-                        ON s.drought_index >= t.min_value AND s.drought_index < t.max_value
-        """
-
-        try:
-            with engine.begin() as conn:
-                # Check if there are any records in the staging table
-                result = conn.execute(text("SELECT COUNT(*) FROM stg_metero_droughts"))
-                count = result.scalar()
-                # print("Station Codes:", df_temp_pres['station_code'].unique())
-                if count > 0:
-                   # Insert/Append new records in meterological_droughts
-                    conn.execute(text(insert_final_metero_table_sql))
-                    conn.commit()
-        
-        except Exception as e:
-            print(f"Error inserting into meterological_droughts table: {e}")
+            print(f"Error loading metero drought data to staging table: {e}")
             return
 
-        print("Metero Drought Data Inserted")
-    except Exception as e:
-        print(f"General error in load_data_to_database: {e}")
-        return
+        # SQL to insert final data
+        insert_final_metero_table_sql = """
+            INSERT INTO meterological_droughts (monthly_date, station_code, value_index, measurement_type, risk_level)
+            SELECT s.monthly_date, s.station_code, s.drought_index, 'A' AS measurement_type,
+                   t.category::drought_risk_level_enum AS risk_level
+            FROM stg_metero_droughts s 
+            JOIN spi_thresholds t 
+              ON s.drought_index >= t.min_value AND s.drought_index < t.max_value;
+        """
 
+        # Insert into final table if staging table has data
+        try:
+            with engine.begin() as conn:
+                result = conn.execute(text("SELECT COUNT(*) FROM stg_metero_droughts"))
+                count = result.scalar()
+                print(f"Staging table row count: {count}")
+
+                if count > 0:
+                    conn.execute(text(insert_final_metero_table_sql))
+                    conn.commit()
+                    print("Metero drought data successfully inserted into final table.")
+                else:
+                    print("No data found in staging table. Skipping final insert.")
+
+        except Exception as e:
+            print(f"Error inserting data into meterological_droughts: {e}")
+
+    except Exception as e:
+        print(f"General error in load_metero_data_to_database: {e}")
     finally:
-        print("Finalizing load_data_to_database")     
-        
-def load_metero_droughts_data(): 
+        print("Finalizing load_metero_data_to_database")
+
+def load_metero_droughts_data():
     try:
-        #scrape metero drought data
-        #scrape_metero_drought_data()
-        # Create a database connection
+        # Clear final table before inserting new records
         with engine.begin() as conn:
-            # Delete data from meterological_droughts before inserting the records
             conn.execute(text("DELETE FROM meterological_droughts"))
-            
-        #load metero drought data into database
-         # for each file in the downloads_hydro directory, load the data into the database
-        #download_dir = "datafiles\\downloads_metero"  # Define the directory path
-        download_dir = "gs://datafiles_bucket/downloads_metero"
-        
-        #print count of all files in the directory
-        print("Count of files in the directory:", len(os.listdir(download_dir)))
-        for file in os.listdir(download_dir):
-            if file.endswith(".csv"):
-                print("Loading file:", file)
-                file_path = os.path.join(download_dir, file)
-                load_metero_data_to_database(file_path)
+            print("Deleted existing records from meterological_droughts")
+
+        # GCS bucket and directory (prefix)
+        bucket_name = "datafiles_bucket"
+        prefix = "downloads_metero/"
+
+        # List files in GCS folder
+        bucket = storage_client.bucket(bucket_name)
+        blobs = list(bucket.list_blobs(prefix=prefix))
+
+        print(f"Count of files found in GCS folder '{prefix}': {len(blobs)}")
+
+        # Process each CSV file
+        for blob in blobs:
+            if blob.name.endswith(".csv"):
+                print("Processing file:", blob.name)
+
+                # Download file to /tmp/ (Cloud Functions temporary directory)
+                temp_path = f"/tmp/{os.path.basename(blob.name)}"
+                blob.download_to_filename(temp_path)
+                print(f"Downloaded {blob.name} to {temp_path}")
+
+                # Load data into database
+                load_metero_data_to_database(temp_path)
+
+                # Remove file to free space
+                os.remove(temp_path)
+                print(f"Removed temp file {temp_path}")
 
     except Exception as e:
         print(f"Error in load_metero_droughts_data: {e}")
-
+        
 def load_indicator_categories(df_ind, engine):
     try:
         all_records = []
@@ -1158,7 +1364,8 @@ def load_indicators(excel_path,sheet_csv_map, engine):
             print(f"Failed to process sheet {sheet_name}: {e}")
 
 def load_indicator_categories_data():
-    ind_datafile = "datafiles\CLEAN DATA - Humanitarian Data Exchange.xlsx"
+    #ind_datafile = "datafiles\CLEAN DATA - Humanitarian Data Exchange.xlsx"
+    ind_datafile = "gs://datafiles_bucket/CLEAN DATA - Humanitarian Data Exchange.xlsx"
     sheet_csv_map = {
         'Poverty': 'https://data.humdata.org/dataset/57cd47b1-a017-4ecf-b175-d728659a2f03/resource/5d696f49-e7d4-4411-94b5-7b580bef0f01/download/poverty_arg.csv',
         'Environment': 'https://data.humdata.org/dataset/248aff86-89a1-4644-836b-7c4ca353c481/resource/74217609-e88e-40e8-ae8c-8a13cd61fc02/download/environment_arg.csv',
