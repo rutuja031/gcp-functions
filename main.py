@@ -60,6 +60,7 @@ def daily_schedule(event, context):
             engine = create_engine(DB_URL)
 
             # Run your data pipeline
+            
             ## run all first to force run -----------
             # load_stations_data()
             # load_wildfires_data()
@@ -68,8 +69,8 @@ def daily_schedule(event, context):
             # insert_forecast_temperature()
             # insert_forecast_pressure() 
             load_hydro_droughts_data()  #--remaining
-            load_metero_droughts_data() 
-            load_indicator_categories_data()
+            load_metero_droughts_data() #--remaining
+            # load_indicator_categories_data()
             
             # ## run daily schedule--------------
             # insert_daily_temperature()

@@ -132,8 +132,8 @@ def load_stations_data():
         print(f"General error in load_stations_data: {e}")
         return
     
-    finally:
-        print("Finalizing load_stations_data")
+    # finally:
+    #     print("Finalizing load_stations_data")
 
 def load_wildfires_data():
     try:
@@ -305,18 +305,13 @@ def load_wildfires_data():
         except Exception as e:
             print(f"Error inserting into final fires_by_months table: {e}")
             return
-    finally:
-        print("Finalizing load_fires_data")
+    # finally:
+    #     print("Finalizing load_fires_data")
 
 def load_temperature_pressure_data():
     try:
-        # maxtmp_datafile = "datafiles\\TEMP-HUMIDITY-PRESION-WIND - Exp. 208486-1.txt"
-        #mintemp_datafile = "datafiles\\TEMP-HUMIDITY-PRESION-WIND - Exp. 208486-2.txt"
         mintemp_datafile= "gs://datafiles_bucket/TEMP-HUMIDITY-PRESION-WIND - Exp. 208486-2.txt"
         try:
-            # df_temperature_f1 = pd.read_csv(maxtmp_datafile)[["Estacion","Fecha","Temp. Maxima (°C)","Temp. Minima (°C)","Presion media Nivel Estacion (hPa)","Precipitacion (mm)","Hum. Relativa Media (%)","Dirección viento maximo","Velocidad viento maximo (m/s)"]].dropna()
-            # df_temperature_f1.columns = ["station_code", "daily_date", "max_temp", "min_temp", "pressure", "precipitation", "humidity", "max_wind_direction", "max_wind_speed"]       
-            # df_temperature_f1 = normalize_columns(df_temperature_f1)
             df_temperature_f2 = pd.read_csv(mintemp_datafile)[["Estacion","Fecha","Temp. Maxima (°C)","Temp. Minima (°C)","Presion media Nivel Estacion (hPa)","Precipitacion (mm)","Hum. Relativa Media (%)","Dirección viento maximo","Velocidad viento maximo (m/s)"]].dropna()
             df_temperature_f2.columns = ["station_code", "daily_date", "max_temp", "min_temp", "pressure", "precipitation", "humidity", "max_wind_direction", "max_wind_speed"]
             df_temperature_f2 = normalize_columns(df_temperature_f2)
@@ -439,8 +434,8 @@ def load_temperature_pressure_data():
         print(f"General error in load_temperature_pressure_data: {e}")
         return
 
-    finally:
-        print("Finalizing load_temperature_pressure_data")
+    # finally:
+    #     print("Finalizing load_temperature_pressure_data")
         
 def insert_daily_temperature():  ####### for daily temperature
     try:
@@ -700,7 +695,7 @@ def insert_forecast_temperature():   ## for daily
     except Exception as e:
         print(f"Error in insert_forecast_temperature: {e}")
 
-def insert_forecast_pressure():  ## for daly
+def insert_forecast_pressure():  ## for daily
     try:
         forecast_days = 7
         lags = 7
@@ -972,8 +967,8 @@ def load_hydro_data_to_database(file_path):
 
     except Exception as e:
         print(f"General error in load_hydro_data_to_database: {e}")
-    finally:
-        print("Finalizing load_hydro_data_to_database")
+    # finally:
+    #     print("Finalizing load_hydro_data_to_database")
 
 def load_hydro_droughts_data():
     try:
@@ -1157,8 +1152,8 @@ def load_metero_data_to_database(file_path):
 
     except Exception as e:
         print(f"General error in load_metero_data_to_database: {e}")
-    finally:
-        print("Finalizing load_metero_data_to_database")
+    # finally:
+    #     print("Finalizing load_metero_data_to_database")
 
 def load_metero_droughts_data():
     try:
