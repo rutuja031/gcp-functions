@@ -885,7 +885,7 @@ def load_hydro_data_to_database(file_path):
     finally:
         print("Finalizing load_data_to_database")       
         
-def load_hydro_droughts_data():  ## change file path
+def load_hydro_droughts_data():
     try:
         #scrape hydro drought data
         #scrape_hydro_drought_data()
@@ -895,7 +895,8 @@ def load_hydro_droughts_data():  ## change file path
 
         #load hydro drought data into database
          # for each file in the downloads_hydro directory, load the data into the database
-        download_dir = "datafiles\\downloads_hydro"  # Define the directory path
+        #download_dir = "datafiles\\downloads_hydro"  # Define the directory path
+        download_dir = "gs://datafiles_bucket/downloads_hydro"
         #print count of all files in the directory
         print("Count of files in the directory:", len(os.listdir(download_dir)))
         for file in os.listdir(download_dir):
@@ -965,7 +966,7 @@ def load_metero_data_to_database(file_path):
     finally:
         print("Finalizing load_data_to_database")     
         
-def load_metero_droughts_data():  ## change file path
+def load_metero_droughts_data(): 
     try:
         #scrape metero drought data
         #scrape_metero_drought_data()
@@ -976,7 +977,9 @@ def load_metero_droughts_data():  ## change file path
             
         #load metero drought data into database
          # for each file in the downloads_hydro directory, load the data into the database
-        download_dir = "datafiles\\downloads_metero"  # Define the directory path
+        #download_dir = "datafiles\\downloads_metero"  # Define the directory path
+        download_dir = "gs://datafiles_bucket/downloads_metero"
+        
         #print count of all files in the directory
         print("Count of files in the directory:", len(os.listdir(download_dir)))
         for file in os.listdir(download_dir):
@@ -1204,7 +1207,8 @@ def load_indicator_categories_data():
         print("Finalizing load_indicator_categories_data")
 
 try:
-    db_url = f"postgresql://postgres:Database%40123@34.100.141.55:5432/HO_IFRC_ARG"
+    # db_url = f"postgresql://postgres:Database%40123@34.100.141.55:5432/HO_IFRC_ARG"
+    db_url = f"postgresql://postgres:Database%40123@34.100.141.55:5432/ho_ifrc_arg"
     engine = create_engine(db_url)
 except Exception as e:
     print(f"Error creating database engine: {e}")
