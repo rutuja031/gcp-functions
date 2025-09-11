@@ -33,7 +33,7 @@ insert_forecast_temperature, insert_forecast_pressure,load_hydro_droughts_data,l
 insert_hydro_droughts_forecast, insert_fires_by_months_forecast, insert_metero_droughts_forecast, insert_fires_by_location_forecast)
     
 ## entry point function
-def daily_schedule(event, context):
+def schedule(event, context):
     """
     Cloud Function triggered by Pub/Sub for daily jobs.
     """
