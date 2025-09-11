@@ -69,7 +69,7 @@ def daily_schedule(event, context):
             # insert_daily_temperature()
             # insert_forecast_temperature()
             # insert_forecast_pressure() 
-            load_hydro_droughts_data() 
+            #load_hydro_droughts_data() 
             # load_metero_droughts_data() 
             # load_indicator_categories_data()
             insert_hydro_droughts_forecast()
@@ -78,8 +78,8 @@ def daily_schedule(event, context):
             insert_fires_by_location_forecast()
             
             # ## run daily schedule--------------
-            # insert_daily_temperature()
-            # insert_forecast_temperature()
+            insert_daily_temperature()
+            insert_forecast_temperature()
             
             print("All Task Completed")
 
