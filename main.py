@@ -74,8 +74,8 @@ def schedule(event, context):
             # load_indicator_categories_data()
             insert_hydro_droughts_forecast()
             insert_metero_droughts_forecast()
-            insert_fires_by_months_forecast()
-            insert_fires_by_location_forecast()
+            # insert_fires_by_months_forecast()  #remaining
+            # insert_fires_by_location_forecast()  #remaining
             
             # ## run daily schedule--------------
             insert_daily_temperature()
