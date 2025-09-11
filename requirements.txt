@@ -12,3 +12,5 @@ gcsfs
 google-cloud-storage
 openpyxl
 pmdarima
+google-cloud-pubsub
+google-cloud-logging
