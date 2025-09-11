@@ -29,7 +29,8 @@ logging.basicConfig(level=logging.INFO)
 # Import your custom functions
 #from insert_data_into_tables import (load_temperature_pressure_data,insert_daily_temperature,insert_forecast_temperature)
 from insert_data_into_tables import(load_stations_data, load_wildfires_data,load_temperature_pressure_data,insert_daily_temperature,
-insert_forecast_temperature, insert_forecast_pressure,load_hydro_droughts_data,load_metero_droughts_data,load_indicator_categories_data)
+insert_forecast_temperature, insert_forecast_pressure,load_hydro_droughts_data,load_metero_droughts_data,load_indicator_categories_data,
+insert_hydro_droughts_forecast, insert_fires_by_months_forecast, insert_metero_droughts_forecast, insert_fires_by_location_forecast)
     
 ## entry point function
 def daily_schedule(event, context):
@@ -68,9 +69,13 @@ def daily_schedule(event, context):
             # insert_daily_temperature()
             # insert_forecast_temperature()
             # insert_forecast_pressure() 
-            load_hydro_droughts_data()  #--remaining
-            load_metero_droughts_data() #--remaining
+            load_hydro_droughts_data() 
+            # load_metero_droughts_data() 
             # load_indicator_categories_data()
+            insert_hydro_droughts_forecast()
+            insert_metero_droughts_forecast()
+            insert_fires_by_months_forecast()
+            insert_fires_by_location_forecast()
             
             # ## run daily schedule--------------
             # insert_daily_temperature()

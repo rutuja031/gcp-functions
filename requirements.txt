@@ -11,3 +11,4 @@ requests
 gcsfs
 google-cloud-storage
 openpyxl
+pmdarima

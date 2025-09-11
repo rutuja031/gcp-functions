@@ -2,6 +2,7 @@ import pandas as pd
 from sqlalchemy import create_engine, text 
 import unicodedata
 import numpy as np
+import pmdarima as pm
 import re
 import os
 import io
@@ -14,13 +15,11 @@ from sklearn.linear_model import LinearRegression
 from sklearn.ensemble import RandomForestRegressor, ExtraTreesRegressor
 from xgboost import XGBRegressor
 from google.cloud import storage
+# import warnings
+# warnings.filterwarnings("ignore", category=FutureWarning)
 
 # Initialize Google Cloud Storage client
 storage_client = storage.Client()
-
-
-# import scrape_hydro_drought_data
-# import scrape_metero_drought_data
 
 # Normalize column names for a DataFrame
 def normalize_columns(df):
@@ -206,12 +205,12 @@ def load_wildfires_data():
             return
 
         insert_final_table_sql = """
-            INSERT INTO fires_by_location (region_code, province_code, year, hectares, fire_count)
+            INSERT INTO fires_by_location (region_code, province_code, year, hectares, fire_count, measurement_type)
             SELECT (select region_code from provinces 
                     where UPPER(province_name) = UPPER(stg_fires_by_location.location)),
                     (select province_code from provinces 
                     where UPPER(province_name) = UPPER(stg_fires_by_location.location)),
-                    year, hectares, fire_count
+                    year, hectares, fire_count, 'A'
             FROM stg_fires_by_location
         """
         try:
@@ -288,8 +287,8 @@ def load_wildfires_data():
         
         # Insert data into final fires_by_months
         insert_final_table_sql = """
-            INSERT INTO fires_by_months (year, month_no, fire_count)
-            SELECT year, month, fire_count
+            INSERT INTO fires_by_months (year, month_no, fire_count, measurement_type)
+            SELECT year, month, fire_count, 'A'
             FROM stg_fires_by_months
         """
         try:
@@ -307,6 +306,157 @@ def load_wildfires_data():
             return
     # finally:
     #     print("Finalizing load_fires_data")
+    except Exception as e:
+            print(f"General error in load_wildfires_data: {e}")
+            return
+
+def insert_fires_by_months_forecast():
+    try:
+        try:
+            query_months = "SELECT DISTINCT month_no FROM fires_by_months ORDER BY month_no"
+            df_months = pd.read_sql(query_months, engine)
+            months = df_months['month_no'].tolist()
+        except Exception as e:
+            print(f"Error loading months: {e}")
+            return
+
+        for month in months:
+            try:
+                query_data = """
+                    SELECT year, fire_count
+                    FROM fires_by_months
+                    WHERE month_no = %s AND measurement_type = 'A'
+                    ORDER BY year
+                """
+                df = pd.read_sql(query_data, engine, params=(month,))
+            except Exception as e:
+                print(f"Error loading fire data for month {month}: {e}")
+                continue
+
+            if len(df) < 3:
+                print(f"Skipping month {month}: Not enough data")
+                continue
+
+            values = df['fire_count'].dropna().values
+            if len(values) < 3:
+                print(f"Skipping month {month}: Not enough non-NaN data")
+                continue
+
+            if np.all(values == values[0]):
+                print(f"Skipping month {month}: constant values")
+                continue
+
+            last_year = int(df['year'].max())
+
+            try:
+                model = pm.auto_arima(values, seasonal=False, suppress_warnings=True, error_action='ignore')
+                forecast = model.predict(n_periods=1)[0]
+                forecast = round(forecast, 1)  # Optional: round to 1 decimal
+            except Exception as e:
+                print(f"Skipping month {month}: model fitting error {e}")
+                continue
+
+            #print(f"Month {month} Year {last_year + 1} Forecast: {forecast}")
+
+            try:
+                insert_query = text("""
+                    INSERT INTO fires_by_months (year, month_no, fire_count, measurement_type)
+                    VALUES (:year, :month_no, :fire_count, 'F')
+                """)
+                with engine.begin() as conn:
+                    conn.execute(insert_query, {
+                        "year": int(last_year + 1),
+                        "month_no": int(month),
+                        "fire_count": float(forecast)
+                    })
+            except Exception as e:
+                print(f"Error inserting forecast for month {month}: {e}")
+                continue
+
+    except Exception as e:
+        print(f"Fatal error in insert_fires_by_months_forecast: {e}")
+
+def insert_fires_by_location_forecast():
+    try:
+        try:
+            query_provinces = "SELECT province_code FROM provinces ORDER BY province_name"
+            df_provinces = pd.read_sql(query_provinces, engine)
+            province_codes = df_provinces['province_code'].tolist()
+        except Exception as e:
+            print(f"Error loading provinces: {e}")
+            return
+
+        for province_code in province_codes:
+            try:
+                query_data = """
+                    SELECT year, fire_count, hectares
+                    FROM fires_by_location
+                    WHERE province_code = %s AND measurement_type = 'A'
+                    ORDER BY year
+                """
+                df = pd.read_sql(query_data, engine, params=(province_code,))
+            except Exception as e:
+                print(f"Error loading fire data for province {province_code}: {e}")
+                continue
+
+            if len(df) < 3:
+                print(f"Skipping province {province_code}: not enough data")
+                continue
+
+            years = df['year'].values
+            fire_counts = df['fire_count'].dropna().values
+            hectares_vals = df['hectares'].dropna().values
+
+            # Forecast fire_count
+            fire_forecast = None
+            if len(fire_counts) >= 3 and not np.all(fire_counts == fire_counts[0]):
+                try:
+                    model_fire = pm.auto_arima(fire_counts, seasonal=False, suppress_warnings=True, error_action='ignore')
+                    fire_forecast = round(model_fire.predict(n_periods=1)[0], 1)
+                except Exception as e:
+                    print(f"Skipping fire_count forecast for province {province_code}: {e}")
+
+            # Forecast hectares
+            hectares_forecast = None
+            if len(hectares_vals) >= 3 and not np.all(hectares_vals == hectares_vals[0]):
+                try:
+                    model_hectares = pm.auto_arima(hectares_vals, seasonal=False, suppress_warnings=True, error_action='ignore')
+                    hectares_forecast = round(model_hectares.predict(n_periods=1)[0], 1)
+                except Exception as e:
+                    print(f"Skipping hectares forecast for province {province_code}: {e}")
+
+            forecast_year = int(years[-1]) + 1
+
+            if fire_forecast is not None and hectares_forecast is not None:
+                try:
+                    query_region = "SELECT region_code FROM provinces WHERE province_code = %s"
+                    df_region = pd.read_sql(query_region, engine, params=(province_code,))
+                    if df_region.empty:
+                        print(f"Region code not found for province {province_code}")
+                        continue
+                    region_code = df_region.iloc[0]['region_code']
+
+                    insert_query = text("""
+                        INSERT INTO fires_by_location (region_code, province_code, year, fire_count, hectares, measurement_type, created_by, created_at)
+                        VALUES (:region_code, :province_code, :year, :fire_count, :hectares, 'F', 'system', :created_at)
+                    """)
+                    with engine.begin() as conn:
+                        conn.execute(insert_query, {
+                            "region_code": region_code,
+                            "province_code": province_code,
+                            "year": forecast_year,
+                            "fire_count": fire_forecast,
+                            "hectares": hectares_forecast,
+                            "created_at": datetime.now()
+                        })
+                    print(f"Inserted forecast for province {province_code}, year {forecast_year}")
+                except Exception as e:
+                    print(f"Error inserting forecast for province {province_code}: {e}")
+            else:
+                print(f"Incomplete forecast for province {province_code}, nothing inserted.")
+
+    except Exception as e:
+        print(f"Fatal error in insert_fires_by_location_forecast: {e}")
 
 def load_temperature_pressure_data():
     try:
@@ -781,6 +931,7 @@ def insert_forecast_pressure():  ## for daily
                 for i in range(forecast_days):
                     input_arr = np.array(lags_list[-lags:]).reshape(1, -1)
                     pred = best_model.predict(input_arr)[0]
+                    pred = round(pred, 1)
                     next_date = df.index[-1] + pd.Timedelta(days=i + 1)
                     preds.append(pred)
                     dates.append(next_date)
@@ -827,84 +978,6 @@ def insert_forecast_pressure():  ## for daily
 
     except Exception as e:
         print(f"Error in insert_forecast_pressure: {e}")
-     
-# def load_hydro_data_to_database(file_path):
-#     try:
-#         df_hydro = pd.read_csv(file_path)[["cod_est", "fecha", "valor_indice"]].dropna()
-#         df_hydro.columns = ["station_code", "daily_date", "drought_index"]
-#         df_hydro = normalize_columns(df_hydro)
-#         # print first few rows of data for a station
-#         print("Hydro Drought Data:", df_hydro.head())
-
-#         create_table_sql = """
-#             DROP TABLE IF EXISTS stg_hydro_droughts;  
-#             CREATE TABLE IF NOT EXISTS stg_hydro_droughts (        
-#                 station_code 	VARCHAR(20) NOT NULL,
-#                 daily_date 		DATE NOT NULL,
-#                 drought_index	NUMERIC,
-#                 PRIMARY KEY (station_code, daily_date)
-#             );
-#             """
-#         try:
-#             with engine.begin() as conn:
-#                 conn.execute(text(create_table_sql))
-#                 df_hydro.to_sql("stg_hydro_droughts", conn, if_exists="append", index=False)
-#         except Exception as e:
-#             print(f"Error loading hydro drought data: {e}")
-
-#         insert_final_hydro_table_sql ="""
-#             INSERT INTO hydrological_droughts (daily_date, station_code, value_index, measurement_type, risk_level)
-#                         SELECT s.daily_date, s.station_code, s.drought_index, 'A' AS measurement_type,
-#                         t.category::drought_risk_level_enum AS risk_level
-#                         FROM stg_hydro_droughts s
-#                         JOIN spi_thresholds t 
-#                         ON s.drought_index BETWEEN t.min_value AND t.max_value
-#         """
-
-#         try:
-#             with engine.begin() as conn:
-#                 # Check if there are any records in the staging table
-#                 result = conn.execute(text("SELECT COUNT(*) FROM stg_hydro_droughts"))
-#                 count = result.scalar()
-#                 # print("Station Codes:", df_temp_pres['station_code'].unique())
-#                 if count > 0:
-#                     conn.execute(text(insert_final_hydro_table_sql))
-#                     conn.commit()
-        
-#         except Exception as e:
-#             print(f"Error inserting into hydrological_droughts table: {e}")
-#             return
-
-#         print("Hydro Drought Data Inserted")
-#     except Exception as e:
-#         print(f"General error in load_data_to_database: {e}")
-#         return
-
-#     finally:
-#         print("Finalizing load_data_to_database")       
-        
-# def load_hydro_droughts_data():
-#     try:
-#         #scrape hydro drought data
-#         #scrape_hydro_drought_data()
-#         with engine.begin() as conn:
-#             # Delete data from hydrological_droughts before inserting the records
-#             conn.execute(text("DELETE FROM hydrological_droughts"))
-
-#         #load hydro drought data into database
-#          # for each file in the downloads_hydro directory, load the data into the database
-#         #download_dir = "datafiles\\downloads_hydro"  # Define the directory path
-#         download_dir = "gs://datafiles_bucket/downloads_hydro"
-#         #print count of all files in the directory
-#         print("Count of files in the directory:", len(os.listdir(download_dir)))
-#         for file in os.listdir(download_dir):
-#             if file.endswith(".csv"):
-#                 print("Loading file:", file)
-#                 file_path = os.path.join(download_dir, file)
-#                 load_hydro_data_to_database(file_path)
-
-#     except Exception as e:
-#         print(f"Error in load_hydro_droughts_data: {e}")
 
 def load_hydro_data_to_database(file_path):
     try:
@@ -916,7 +989,7 @@ def load_hydro_data_to_database(file_path):
         df_hydro = normalize_columns(df_hydro)
 
         # Print sample data for debugging
-        print("Hydro Drought Data Sample:\n", df_hydro.head())
+        #print("Hydro Drought Data Sample:\n", df_hydro.head())
 
         # SQL to create staging table
         create_table_sql = """
@@ -953,7 +1026,7 @@ def load_hydro_data_to_database(file_path):
             with engine.begin() as conn:
                 result = conn.execute(text("SELECT COUNT(*) FROM stg_hydro_droughts"))
                 count = result.scalar()
-                print(f"Staging table row count: {count}")
+                #print(f"Staging table row count: {count}")
 
                 if count > 0:
                     conn.execute(text(insert_final_hydro_table_sql))
@@ -975,7 +1048,7 @@ def load_hydro_droughts_data():
         # Delete existing data from final table before new load
         with engine.begin() as conn:
             conn.execute(text("DELETE FROM hydrological_droughts"))
-            print("Deleted existing records from hydrological_droughts")
+            #print("Deleted existing records from hydrological_droughts")
 
         # GCS bucket and directory prefix
         bucket_name = "datafiles_bucket"
@@ -990,105 +1063,22 @@ def load_hydro_droughts_data():
         # Process each CSV file
         for blob in blobs:
             if blob.name.endswith(".csv"):
-                print("Processing file:", blob.name)
+                #print("Processing file:", blob.name)
 
                 # Download file to /tmp/ (Cloud Functions temp directory)
                 temp_path = f"/tmp/{os.path.basename(blob.name)}"
                 blob.download_to_filename(temp_path)
-                print(f"Downloaded {blob.name} to {temp_path}")
+                #print(f"Downloaded {blob.name} to {temp_path}")
 
                 # Load into database
                 load_hydro_data_to_database(temp_path)
 
                 # Remove temp file to free space
                 os.remove(temp_path)
-                print(f"Removed temp file {temp_path}")
+                #print(f"Removed temp file {temp_path}")
 
     except Exception as e:
         print(f"Error in load_hydro_droughts_data: {e}")
-        
-# def load_metero_data_to_database(file_path):
-#     try:
-#         df_metero = pd.read_csv(file_path)[["omm_id", "fecha", "valor_indice", "pentada_fin"]].dropna()
-
-#         df_metero.columns = ["station_code", "monthly_date", "drought_index", "pentada_end"]
-#         df_metero = normalize_columns(df_metero)
-#         # print first few rows of data for a station
-#         print("metero Drought Data:", df_metero.head())
-
-#         create_table_sql = """
-#             DROP TABLE IF EXISTS stg_metero_droughts;  
-#             CREATE TABLE IF NOT EXISTS stg_metero_droughts (        
-#                 station_code 	VARCHAR(20) NOT NULL,
-#                 monthly_date 	DATE NOT NULL,
-#                 drought_index	NUMERIC,
-#                 pentada_end     INTEGER,
-#                 PRIMARY KEY (station_code, monthly_date)
-#             );
-#             """
-#         try:
-#             with engine.begin() as conn:
-#                 conn.execute(text(create_table_sql))
-#                 df_metero.to_sql("stg_metero_droughts", conn, if_exists="append", index=False)
-#         except Exception as e:
-#             print(f"Error loading metero drought data: {e}")
-
-#         insert_final_metero_table_sql ="""
-#             INSERT INTO meterological_droughts (monthly_date, station_code, value_index, measurement_type, risk_level)
-#                         SELECT s.monthly_date, s.station_code, s.drought_index, 'A' AS measurement_type,
-#                         t.category::drought_risk_level_enum AS risk_level
-#                         FROM stg_metero_droughts s 
-#                         JOIN spi_thresholds t 
-#                         ON s.drought_index >= t.min_value AND s.drought_index < t.max_value
-#         """
-
-#         try:
-#             with engine.begin() as conn:
-#                 # Check if there are any records in the staging table
-#                 result = conn.execute(text("SELECT COUNT(*) FROM stg_metero_droughts"))
-#                 count = result.scalar()
-#                 # print("Station Codes:", df_temp_pres['station_code'].unique())
-#                 if count > 0:
-#                    # Insert/Append new records in meterological_droughts
-#                     conn.execute(text(insert_final_metero_table_sql))
-#                     conn.commit()
-        
-#         except Exception as e:
-#             print(f"Error inserting into meterological_droughts table: {e}")
-#             return
-
-#         print("Metero Drought Data Inserted")
-#     except Exception as e:
-#         print(f"General error in load_data_to_database: {e}")
-#         return
-
-#     finally:
-#         print("Finalizing load_data_to_database")     
-        
-# def load_metero_droughts_data(): 
-#     try:
-#         #scrape metero drought data
-#         #scrape_metero_drought_data()
-#         # Create a database connection
-#         with engine.begin() as conn:
-#             # Delete data from meterological_droughts before inserting the records
-#             conn.execute(text("DELETE FROM meterological_droughts"))
-            
-#         #load metero drought data into database
-#          # for each file in the downloads_hydro directory, load the data into the database
-#         #download_dir = "datafiles\\downloads_metero"  # Define the directory path
-#         download_dir = "gs://datafiles_bucket/downloads_metero"
-        
-#         #print count of all files in the directory
-#         print("Count of files in the directory:", len(os.listdir(download_dir)))
-#         for file in os.listdir(download_dir):
-#             if file.endswith(".csv"):
-#                 print("Loading file:", file)
-#                 file_path = os.path.join(download_dir, file)
-#                 load_metero_data_to_database(file_path)
-
-#     except Exception as e:
-#         print(f"Error in load_metero_droughts_data: {e}")
 
 def load_metero_data_to_database(file_path):
     try:
@@ -1100,7 +1090,7 @@ def load_metero_data_to_database(file_path):
         df_metero = normalize_columns(df_metero)
 
         # Print first few rows for debugging
-        print("Metero Drought Data Sample:\n", df_metero.head())
+        #print("Metero Drought Data Sample:\n", df_metero.head())
 
         # SQL to create staging table
         create_table_sql = """
@@ -1138,7 +1128,7 @@ def load_metero_data_to_database(file_path):
             with engine.begin() as conn:
                 result = conn.execute(text("SELECT COUNT(*) FROM stg_metero_droughts"))
                 count = result.scalar()
-                print(f"Staging table row count: {count}")
+                #print(f"Staging table row count: {count}")
 
                 if count > 0:
                     conn.execute(text(insert_final_metero_table_sql))
@@ -1175,19 +1165,19 @@ def load_metero_droughts_data():
         # Process each CSV file
         for blob in blobs:
             if blob.name.endswith(".csv"):
-                print("Processing file:", blob.name)
+                #print("Processing file:", blob.name)
 
                 # Download file to /tmp/ (Cloud Functions temporary directory)
                 temp_path = f"/tmp/{os.path.basename(blob.name)}"
                 blob.download_to_filename(temp_path)
-                print(f"Downloaded {blob.name} to {temp_path}")
+                #print(f"Downloaded {blob.name} to {temp_path}")
 
                 # Load data into database
                 load_metero_data_to_database(temp_path)
 
                 # Remove file to free space
                 os.remove(temp_path)
-                print(f"Removed temp file {temp_path}")
+                #print(f"Removed temp file {temp_path}")
 
     except Exception as e:
         print(f"Error in load_metero_droughts_data: {e}")
@@ -1408,49 +1398,256 @@ def load_indicator_categories_data():
     finally:
         print("Finalizing load_indicator_categories_data")
 
+def insert_hydro_droughts_forecast():
+    try:
+        # Fetch SPI thresholds
+        spi_query = "SELECT min_value, max_value, category FROM spi_thresholds"
+        spi_thresholds = pd.read_sql(spi_query, engine)
+
+        # Fetch hydrological drought data
+        hydro_query = """
+            SELECT h.station_code, s.station_name, h.daily_date, h.value_index
+            FROM hydrological_droughts h
+            JOIN stations s ON h.station_code = s.station_code
+            ORDER BY s.station_name, h.daily_date
+        """
+        hydro_df = pd.read_sql(hydro_query, engine)
+        hydro_df['daily_date'] = pd.to_datetime(hydro_df['daily_date'], format='%d-%m-%Y')
+
+        stations = hydro_df['station_code'].unique()
+        inserts = []
+
+        for code in stations:
+            city_df = hydro_df[hydro_df['station_code'] == code].sort_values('daily_date')
+
+            if len(city_df) < 14:
+                continue
+
+            ts = city_df.set_index('daily_date')['value_index'].astype(float)
+
+            # Create lag features
+            lag = 7
+            df_feat = pd.DataFrame()
+            for i in range(1, lag + 1):
+                df_feat[f'lag_{i}'] = ts.shift(i)
+            df_feat['target'] = ts.values
+            df_feat.dropna(inplace=True)
+
+            X = df_feat.drop('target', axis=1).values
+            y = df_feat['target'].values
+
+            # Train XGBoost model
+            model = XGBRegressor(
+                objective='reg:squarederror',
+                n_estimators=100,
+                max_depth=3,
+                learning_rate=0.1,
+                verbosity=0,
+                random_state=42
+            )
+            model.fit(X, y)
+
+            # Forecast next 5 days
+            forecast_days = 5
+            last_values = ts.values[-lag:].tolist()
+            forecasts = []
+            for _ in range(forecast_days):
+                x_input = np.array(last_values[-lag:]).reshape(1, -1)
+                pred = model.predict(x_input)[0]
+                forecasts.append(pred)
+                last_values.append(pred)
+
+            last_date = ts.index[-1]
+            forecast_dates = [last_date + pd.Timedelta(days=i) for i in range(1, forecast_days + 1)]
+
+            for forecast_date, forecast_value in zip(forecast_dates, forecasts):
+                row = spi_thresholds[
+                    (spi_thresholds['min_value'] <= forecast_value) &
+                    (forecast_value < spi_thresholds['max_value'])
+                ]
+                risk_level = row.iloc[0]['category'] if not row.empty else None
+
+                inserts.append({
+                    'daily_date': forecast_date.strftime('%d-%m-%Y'),
+                    'station_code': code,
+                    'value_index': forecast_value,
+                    'risk_level': risk_level,
+                    'measurement_type': 'F',
+                    'created_by': 'system',
+                    'created_at': datetime.now()
+                })
+
+        if inserts:
+            result_df = pd.DataFrame(inserts)
+            insert_query = """
+                INSERT INTO hydrological_droughts (
+                    daily_date, station_code, value_index, risk_level, measurement_type, created_by, created_at
+                )
+                VALUES (:daily_date, :station_code, :value_index, :risk_level, :measurement_type, :created_by, :created_at)
+                ON CONFLICT (daily_date, station_code) DO UPDATE
+                SET value_index = EXCLUDED.value_index,
+                    risk_level = EXCLUDED.risk_level,
+                    measurement_type = EXCLUDED.measurement_type,
+                    created_at = EXCLUDED.created_at;
+            """
+            with engine.begin() as conn:
+                for _, row in result_df.iterrows():
+                    conn.execute(text(insert_query), {
+                        'daily_date': row['daily_date'],
+                        'station_code': row['station_code'],
+                        'value_index': row['value_index'],
+                        'risk_level': row['risk_level'],
+                        'measurement_type': row['measurement_type'],
+                        'created_by': row['created_by'],
+                        'created_at': row['created_at']
+                    })
+            print(f"Inserted {len(result_df)} forecast records (8 per station).")
+        else:
+            print("No forecasts inserted (insufficient history for all stations).")
+
+    except Exception as e:
+        print(f"Error during hydrological drought forecast insertion: {e}")
+
+def insert_metero_droughts_forecast():
+    try:
+        try:
+            query = "SELECT monthly_date, station_code, value_index FROM meterological_droughts WHERE measurement_type = 'A'"
+            df = pd.read_sql(query, engine)
+            df['monthly_date'] = pd.to_datetime(df['monthly_date'])
+            df = df.sort_values(['station_code', 'monthly_date'])
+        except Exception as e:
+            print(f"Error fetching historical drought data: {e}")
+            return
+
+        # --- Fetch SPI Thresholds ---
+        try:
+            thresholds_df = pd.read_sql("SELECT category, min_value, max_value FROM spi_thresholds", engine)
+        except Exception as e:
+            print(f"Error fetching SPI thresholds: {e}")
+            return
+
+        # --- Forecasting Setup ---
+        models = {
+            'LinearRegression': LinearRegression(),
+            'RandomForest': RandomForestRegressor(random_state=42),
+            'XGBoost': XGBRegressor(random_state=42),
+            'ExtraTrees': ExtraTreesRegressor(random_state=42)
+        }
+
+        forecast_records = []
+        # --- Loop Through Each Station ---
+        for station in df['station_code'].unique():
+            try:
+                station_df = df[df['station_code'] == station].copy()
+                station_df = station_df.set_index('monthly_date').sort_index()
+
+                # --- Create Lag Features (2 lags) ---
+                for lag in range(1, 3):
+                    station_df[f'lag_{lag}'] = station_df['value_index'].shift(lag)
+
+                station_df.dropna(inplace=True)
+
+                if len(station_df) < 10:
+                    continue
+
+                # --- Chronological Train-Test Split (95/5) ---
+                split_idx = int(len(station_df) * 0.95)
+                train = station_df.iloc[:split_idx]
+                test = station_df.iloc[split_idx:]
+
+                X_train = train[[f'lag_{i}' for i in range(1, 3)]]
+                y_train = train['value_index']
+                X_test = test[[f'lag_{i}' for i in range(1, 3)]]
+                y_test = test['value_index']
+
+                # --- SMAPE Function ---
+                def smape(y_true, y_pred):
+                    denominator = (np.abs(y_true) + np.abs(y_pred)) / 2
+                    return np.mean(np.abs(y_true - y_pred) / denominator) * 100
+
+                # --- Select Best Model by SMAPE ---
+                best_model = None
+                best_smape = float('inf')
+
+                for name, model in models.items():
+                    model.fit(X_train, y_train)
+                    preds = model.predict(X_test)
+                    score = smape(y_test.values, preds)
+                    if score < best_smape:
+                        best_smape = score
+                        best_model = model
+
+                # --- Forecast Next 3 Months ---
+                last_known = station_df.iloc[-2:].copy()
+                future_dates = [station_df.index[-1] + pd.DateOffset(months=i) for i in range(1, 4)]
+
+                for date in future_dates:
+                    lag_1 = last_known.iloc[-1]['value_index']
+                    lag_2 = last_known.iloc[-2]['value_index']
+                    X_future = np.array([[lag_1, lag_2]])
+                    forecast = round(best_model.predict(X_future)[0], 3)
+
+                    # --- Determine Risk Category ---
+                    category = None
+                    for _, row in thresholds_df.iterrows():
+                        if row['min_value'] <= forecast <= row['max_value']:
+                            category = row['category']
+                            break
+
+                    forecast_records.append({
+                        'monthly_date': date,
+                        'station_code': station,
+                        'value_index': forecast,
+                        'measurement_type': 'F',
+                        'risk_level': category
+                    })
+
+                    # --- Update Lag History ---
+                    last_known = pd.concat([
+                        last_known,
+                        pd.DataFrame({'value_index': [forecast]}, index=[date])
+                    ]).iloc[-2:]
+
+            except Exception as e:
+                print(f"Error processing station {station}: {e}")
+                continue
+
+        # --- Insert Forecasts into DB ---
+        if forecast_records:
+            insert_query = text("""
+                INSERT INTO meterological_droughts (
+                    monthly_date, station_code, value_index, measurement_type, risk_level, created_at
+                )
+                VALUES (:monthly_date, :station_code, :value_index, :measurement_type, :risk_level, :created_at)
+                ON CONFLICT (monthly_date, station_code) DO UPDATE
+                SET value_index = EXCLUDED.value_index,
+                    measurement_type = EXCLUDED.measurement_type,
+                    risk_level = EXCLUDED.risk_level,
+                    created_at = EXCLUDED.created_at;
+            """)
+            try:
+                with engine.begin() as conn:
+                    for record in forecast_records:
+                        conn.execute(insert_query, {
+                            "monthly_date": record['monthly_date'],
+                            "station_code": record['station_code'],
+                            "value_index": float(record['value_index']),
+                            "measurement_type": record['measurement_type'],
+                            "risk_level": record['risk_level'],
+                            "created_at": datetime.now()
+                        })
+                print("Forecasts inserted into meterological_droughts")
+            except Exception as e:
+                print(f"Error inserting forecast records: {e}")
+        else:
+            print("No forecasts generated.")
+
+    except Exception as e:
+        print(f"Fatal error in insert_metero_droughts_forecast: {e}")
+
 try:
     # db_url = f"postgresql://postgres:Database%40123@34.100.141.55:5432/HO_IFRC_ARG"
     db_url = f"postgresql://postgres:Database%40123@34.100.141.55:5432/ho_ifrc_arg"
     engine = create_engine(db_url)
 except Exception as e:
     print(f"Error creating database engine: {e}")
-
-# try:
-#     load_stations_data()
-# except Exception as e:
-#     print(f"Error in load_stations_data: {e}")
-
-# try:
-#     load_wildfires_data()
-# except Exception as e:
-#     print(f"Error in load_wildfires_data: {e}")
-    
-# try:
-#     load_temperature_pressure_data()
-# except Exception as e:
-#     print(f"Error in load_temperature_pressure_data: {e}")
-
-# try:
-#     load_hydro_droughts_data()
-# except Exception as e:
-#      print(f"Error in load_hydro_droughts_data: {e}")
-
-# try:
-#     load_metero_droughts_data()
-# except Exception as e:
-#     print(f"Error in load_metero_droughts_data: {e}")
-
-# try:
-#     load_indicator_categories_data()
-# except Exception as e:
-#     print(f"Error in load_indicator_categories_data: {e}")
-    
-# try:
-#     insert_daily_temperature()
-# except Exception as e:
-#     print(f"Error in insert_daily_temperatur: {e}")
-    
-# try:
-#     insert_forecast_temperature()
-# except Exception as e:
-#     print(f"Error in insert_forecast_temperature: {e}")
