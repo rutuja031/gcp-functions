@@ -2,7 +2,7 @@ import pandas as pd
 from sqlalchemy import create_engine, text 
 import unicodedata
 import numpy as np
-import pmdarima as pm
+# import pmdarima as pm   #--------------------------------
 import re
 import os
 import io
@@ -310,153 +310,153 @@ def load_wildfires_data():
             print(f"General error in load_wildfires_data: {e}")
             return
 
-def insert_fires_by_months_forecast():
-    try:
-        try:
-            query_months = "SELECT DISTINCT month_no FROM fires_by_months ORDER BY month_no"
-            df_months = pd.read_sql(query_months, engine)
-            months = df_months['month_no'].tolist()
-        except Exception as e:
-            print(f"Error loading months: {e}")
-            return
+# def insert_fires_by_months_forecast():
+#     try:
+#         try:
+#             query_months = "SELECT DISTINCT month_no FROM fires_by_months ORDER BY month_no"
+#             df_months = pd.read_sql(query_months, engine)
+#             months = df_months['month_no'].tolist()
+#         except Exception as e:
+#             print(f"Error loading months: {e}")
+#             return
 
-        for month in months:
-            try:
-                query_data = """
-                    SELECT year, fire_count
-                    FROM fires_by_months
-                    WHERE month_no = %s AND measurement_type = 'A'
-                    ORDER BY year
-                """
-                df = pd.read_sql(query_data, engine, params=(month,))
-            except Exception as e:
-                print(f"Error loading fire data for month {month}: {e}")
-                continue
+#         for month in months:
+#             try:
+#                 query_data = """
+#                     SELECT year, fire_count
+#                     FROM fires_by_months
+#                     WHERE month_no = %s AND measurement_type = 'A'
+#                     ORDER BY year
+#                 """
+#                 df = pd.read_sql(query_data, engine, params=(month,))
+#             except Exception as e:
+#                 print(f"Error loading fire data for month {month}: {e}")
+#                 continue
 
-            if len(df) < 3:
-                print(f"Skipping month {month}: Not enough data")
-                continue
+#             if len(df) < 3:
+#                 print(f"Skipping month {month}: Not enough data")
+#                 continue
 
-            values = df['fire_count'].dropna().values
-            if len(values) < 3:
-                print(f"Skipping month {month}: Not enough non-NaN data")
-                continue
+#             values = df['fire_count'].dropna().values
+#             if len(values) < 3:
+#                 print(f"Skipping month {month}: Not enough non-NaN data")
+#                 continue
 
-            if np.all(values == values[0]):
-                print(f"Skipping month {month}: constant values")
-                continue
+#             if np.all(values == values[0]):
+#                 print(f"Skipping month {month}: constant values")
+#                 continue
 
-            last_year = int(df['year'].max())
+#             last_year = int(df['year'].max())
 
-            try:
-                model = pm.auto_arima(values, seasonal=False, suppress_warnings=True, error_action='ignore')
-                forecast = model.predict(n_periods=1)[0]
-                forecast = round(forecast, 1)  # Optional: round to 1 decimal
-            except Exception as e:
-                print(f"Skipping month {month}: model fitting error {e}")
-                continue
+#             try:
+#                 model = pm.auto_arima(values, seasonal=False, suppress_warnings=True, error_action='ignore')
+#                 forecast = model.predict(n_periods=1)[0]
+#                 forecast = round(forecast, 1)  # Optional: round to 1 decimal
+#             except Exception as e:
+#                 print(f"Skipping month {month}: model fitting error {e}")
+#                 continue
 
-            #print(f"Month {month} Year {last_year + 1} Forecast: {forecast}")
+#             #print(f"Month {month} Year {last_year + 1} Forecast: {forecast}")
 
-            try:
-                insert_query = text("""
-                    INSERT INTO fires_by_months (year, month_no, fire_count, measurement_type)
-                    VALUES (:year, :month_no, :fire_count, 'F')
-                """)
-                with engine.begin() as conn:
-                    conn.execute(insert_query, {
-                        "year": int(last_year + 1),
-                        "month_no": int(month),
-                        "fire_count": float(forecast)
-                    })
-            except Exception as e:
-                print(f"Error inserting forecast for month {month}: {e}")
-                continue
+#             try:
+#                 insert_query = text("""
+#                     INSERT INTO fires_by_months (year, month_no, fire_count, measurement_type)
+#                     VALUES (:year, :month_no, :fire_count, 'F')
+#                 """)
+#                 with engine.begin() as conn:
+#                     conn.execute(insert_query, {
+#                         "year": int(last_year + 1),
+#                         "month_no": int(month),
+#                         "fire_count": float(forecast)
+#                     })
+#             except Exception as e:
+#                 print(f"Error inserting forecast for month {month}: {e}")
+#                 continue
 
-    except Exception as e:
-        print(f"Fatal error in insert_fires_by_months_forecast: {e}")
+#     except Exception as e:
+#         print(f"Fatal error in insert_fires_by_months_forecast: {e}")
 
-def insert_fires_by_location_forecast():
-    try:
-        try:
-            query_provinces = "SELECT province_code FROM provinces ORDER BY province_name"
-            df_provinces = pd.read_sql(query_provinces, engine)
-            province_codes = df_provinces['province_code'].tolist()
-        except Exception as e:
-            print(f"Error loading provinces: {e}")
-            return
+# def insert_fires_by_location_forecast():
+#     try:
+#         try:
+#             query_provinces = "SELECT province_code FROM provinces ORDER BY province_name"
+#             df_provinces = pd.read_sql(query_provinces, engine)
+#             province_codes = df_provinces['province_code'].tolist()
+#         except Exception as e:
+#             print(f"Error loading provinces: {e}")
+#             return
 
-        for province_code in province_codes:
-            try:
-                query_data = """
-                    SELECT year, fire_count, hectares
-                    FROM fires_by_location
-                    WHERE province_code = %s AND measurement_type = 'A'
-                    ORDER BY year
-                """
-                df = pd.read_sql(query_data, engine, params=(province_code,))
-            except Exception as e:
-                print(f"Error loading fire data for province {province_code}: {e}")
-                continue
+#         for province_code in province_codes:
+#             try:
+#                 query_data = """
+#                     SELECT year, fire_count, hectares
+#                     FROM fires_by_location
+#                     WHERE province_code = %s AND measurement_type = 'A'
+#                     ORDER BY year
+#                 """
+#                 df = pd.read_sql(query_data, engine, params=(province_code,))
+#             except Exception as e:
+#                 print(f"Error loading fire data for province {province_code}: {e}")
+#                 continue
 
-            if len(df) < 3:
-                print(f"Skipping province {province_code}: not enough data")
-                continue
+#             if len(df) < 3:
+#                 print(f"Skipping province {province_code}: not enough data")
+#                 continue
 
-            years = df['year'].values
-            fire_counts = df['fire_count'].dropna().values
-            hectares_vals = df['hectares'].dropna().values
+#             years = df['year'].values
+#             fire_counts = df['fire_count'].dropna().values
+#             hectares_vals = df['hectares'].dropna().values
 
-            # Forecast fire_count
-            fire_forecast = None
-            if len(fire_counts) >= 3 and not np.all(fire_counts == fire_counts[0]):
-                try:
-                    model_fire = pm.auto_arima(fire_counts, seasonal=False, suppress_warnings=True, error_action='ignore')
-                    fire_forecast = round(model_fire.predict(n_periods=1)[0], 1)
-                except Exception as e:
-                    print(f"Skipping fire_count forecast for province {province_code}: {e}")
+#             # Forecast fire_count
+#             fire_forecast = None
+#             if len(fire_counts) >= 3 and not np.all(fire_counts == fire_counts[0]):
+#                 try:
+#                     model_fire = pm.auto_arima(fire_counts, seasonal=False, suppress_warnings=True, error_action='ignore')
+#                     fire_forecast = round(model_fire.predict(n_periods=1)[0], 1)
+#                 except Exception as e:
+#                     print(f"Skipping fire_count forecast for province {province_code}: {e}")
 
-            # Forecast hectares
-            hectares_forecast = None
-            if len(hectares_vals) >= 3 and not np.all(hectares_vals == hectares_vals[0]):
-                try:
-                    model_hectares = pm.auto_arima(hectares_vals, seasonal=False, suppress_warnings=True, error_action='ignore')
-                    hectares_forecast = round(model_hectares.predict(n_periods=1)[0], 1)
-                except Exception as e:
-                    print(f"Skipping hectares forecast for province {province_code}: {e}")
+#             # Forecast hectares
+#             hectares_forecast = None
+#             if len(hectares_vals) >= 3 and not np.all(hectares_vals == hectares_vals[0]):
+#                 try:
+#                     model_hectares = pm.auto_arima(hectares_vals, seasonal=False, suppress_warnings=True, error_action='ignore')
+#                     hectares_forecast = round(model_hectares.predict(n_periods=1)[0], 1)
+#                 except Exception as e:
+#                     print(f"Skipping hectares forecast for province {province_code}: {e}")
 
-            forecast_year = int(years[-1]) + 1
+#             forecast_year = int(years[-1]) + 1
 
-            if fire_forecast is not None and hectares_forecast is not None:
-                try:
-                    query_region = "SELECT region_code FROM provinces WHERE province_code = %s"
-                    df_region = pd.read_sql(query_region, engine, params=(province_code,))
-                    if df_region.empty:
-                        print(f"Region code not found for province {province_code}")
-                        continue
-                    region_code = df_region.iloc[0]['region_code']
+#             if fire_forecast is not None and hectares_forecast is not None:
+#                 try:
+#                     query_region = "SELECT region_code FROM provinces WHERE province_code = %s"
+#                     df_region = pd.read_sql(query_region, engine, params=(province_code,))
+#                     if df_region.empty:
+#                         print(f"Region code not found for province {province_code}")
+#                         continue
+#                     region_code = df_region.iloc[0]['region_code']
 
-                    insert_query = text("""
-                        INSERT INTO fires_by_location (region_code, province_code, year, fire_count, hectares, measurement_type, created_by, created_at)
-                        VALUES (:region_code, :province_code, :year, :fire_count, :hectares, 'F', 'system', :created_at)
-                    """)
-                    with engine.begin() as conn:
-                        conn.execute(insert_query, {
-                            "region_code": region_code,
-                            "province_code": province_code,
-                            "year": forecast_year,
-                            "fire_count": fire_forecast,
-                            "hectares": hectares_forecast,
-                            "created_at": datetime.now()
-                        })
-                    print(f"Inserted forecast for province {province_code}, year {forecast_year}")
-                except Exception as e:
-                    print(f"Error inserting forecast for province {province_code}: {e}")
-            else:
-                print(f"Incomplete forecast for province {province_code}, nothing inserted.")
+#                     insert_query = text("""
+#                         INSERT INTO fires_by_location (region_code, province_code, year, fire_count, hectares, measurement_type, created_by, created_at)
+#                         VALUES (:region_code, :province_code, :year, :fire_count, :hectares, 'F', 'system', :created_at)
+#                     """)
+#                     with engine.begin() as conn:
+#                         conn.execute(insert_query, {
+#                             "region_code": region_code,
+#                             "province_code": province_code,
+#                             "year": forecast_year,
+#                             "fire_count": fire_forecast,
+#                             "hectares": hectares_forecast,
+#                             "created_at": datetime.now()
+#                         })
+#                     print(f"Inserted forecast for province {province_code}, year {forecast_year}")
+#                 except Exception as e:
+#                     print(f"Error inserting forecast for province {province_code}: {e}")
+#             else:
+#                 print(f"Incomplete forecast for province {province_code}, nothing inserted.")
 
-    except Exception as e:
-        print(f"Fatal error in insert_fires_by_location_forecast: {e}")
+#     except Exception as e:
+#         print(f"Fatal error in insert_fires_by_location_forecast: {e}")
 
 def load_temperature_pressure_data():
     try:

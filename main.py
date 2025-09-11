@@ -30,7 +30,7 @@ logging.basicConfig(level=logging.INFO)
 #from insert_data_into_tables import (load_temperature_pressure_data,insert_daily_temperature,insert_forecast_temperature)
 from insert_data_into_tables import(load_stations_data, load_wildfires_data,load_temperature_pressure_data,insert_daily_temperature,
 insert_forecast_temperature, insert_forecast_pressure,load_hydro_droughts_data,load_metero_droughts_data,load_indicator_categories_data,
-insert_hydro_droughts_forecast, insert_fires_by_months_forecast, insert_metero_droughts_forecast, insert_fires_by_location_forecast)
+insert_hydro_droughts_forecast, insert_metero_droughts_forecast)
     
 ## entry point function
 def schedule(event, context):
