@@ -1,3 +1,6 @@
+## code for gcloud functions with schedule now all are working 
+## to modify: insert_fires_by_months_forecast(), insert_fires_by_location_forecast()
+
 import pandas as pd
 from sqlalchemy import create_engine, text 
 import unicodedata
@@ -48,91 +51,6 @@ def clean_coldata(name):
     except Exception as e:
         print(f"Error cleaning column data: {e}")
         return name
-
-# def load_stations_data():   
-#     try:
-#         st_datafile = "gs://datafiles_bucket/STATIONS _ estaciones smn PAIS.xlsx"  ## GCS path
-#         st_threshold = "gs://datafiles_bucket/HEAT_COLD WAVES - OLAS_CALOR-FRIO.xlsx" ## GCS path
-#         try:
-#             df_st = pd.read_excel(st_datafile, sheet_name='estaciones smn')[["NRO INT", "ESTACION", "PROVINCIA", "LAT ", "LONG", "ALT (m)"]].dropna()
-#             df_st.columns = ["station_code", "station_name", "province_name", "latitude", "longitude", "altitude"]
-#         except Exception as e:
-#             print(f"Error reading stations Excel file: {e}")
-#             return
-
-#         try:
-#             df_th = pd.read_excel(st_threshold, sheet_name='estaciones')[["omm_id", "p90_tmax", "p90_tmin", "p10_tmax","p10_tmin"]].dropna()
-#             df_th.columns = ["station_code", "heat_max", "heat_min", "cold_max", "cold_min"]
-#         except Exception as e:
-#             print(f"Error reading threshold Excel file: {e}")
-#             return
-
-#         create_table_sql = """
-#         DROP TABLE IF EXISTS stg_stations;  
-#         CREATE TABLE IF NOT EXISTS stg_stations (
-#             station_code 	VARCHAR(20) PRIMARY KEY,
-#             station_name 	VARCHAR(255) NOT NULL,
-#             province_name 	VARCHAR(100) NOT NULL,
-#             latitude 		DOUBLE PRECISION,
-#             longitude 		DOUBLE PRECISION,
-#             altitude 		NUMERIC,
-#             cold_max 		NUMERIC,
-#             cold_min 		NUMERIC,
-#             heat_max 		NUMERIC,
-#             heat_min 		NUMERIC
-#         );
-#         """
-#         try:
-#             with engine.begin() as conn:
-#                 conn.execute(text(create_table_sql))    
-#                 conn.commit()
-#         except Exception as e:
-#             print(f"Error creating staging table: {e}")
-#             return
-
-#         try:
-#             df_st = df_st.merge(df_th, on="station_code", how="left")
-#             df_st = normalize_columns(df_st)
-#         except Exception as e:
-#             print(f"Error merging station dataframes: {e}")
-#             return
-
-#         try:
-#             df_st.to_sql("stg_stations", engine, if_exists="append", index=False)
-#         except Exception as e:
-#             print(f"Error writing to staging table: {e}")
-#             return
-
-#         insert_final_table_sql ="""
-#                 INSERT INTO stations (station_code, station_name, province_code, 
-#                             latitude, longitude, altitude, cold_max, cold_min, heat_max, heat_min)
-#                 SELECT station_code, station_name, (SELECT province_code FROM provinces WHERE UPPER(province_name) = UPPER(stg_stations.province_name)) AS province_code, 
-#                             latitude, longitude, altitude, cold_max, cold_min, heat_max, heat_min
-#                 FROM stg_stations
-#             """
-#         try:
-#             with engine.begin() as conn:
-#                 result = conn.execute(text("SELECT COUNT(*) FROM stg_stations"))
-#                 count = result.scalar()
-#                 print("Province Names:", df_st['province_name'].unique())
-#                 if count > 0:
-#                     # Delete data from Stations before inserting the records
-#                     conn.execute(text("DELETE FROM stations"))
-#                     conn.execute(text(insert_final_table_sql ))
-#                 conn.execute(text("TRUNCATE TABLE stg_stations"))
-#                 conn.commit()
-#                 conn.close()
-#         except Exception as e:
-#             print(f"Error inserting into final stations table: {e}")
-#             return
-
-#         print("Stations Data Inserted")
-#     except Exception as e:
-#         print(f"General error in load_stations_data: {e}")
-#         return
-    
-#     # finally:
-#     #     print("Finalizing load_stations_data")
 
 def load_stations_data():
     try:
@@ -246,7 +164,7 @@ def load_wildfires_data():
         try:
             df_fires = df_fires_provincewise.merge(df_hectares_provincewise, on=["location"], how="left")
             df_fires = normalize_columns(df_fires)
-            print("Merged Fires Data:", df_fires)
+            #print("Merged Fires Data:", df_fires)
         except Exception as e:
             print(f"Error merging fires dataframes: {e}")
             return
@@ -262,7 +180,7 @@ def load_wildfires_data():
         
         df_fires_all = fires_long.merge(hectares_long,on=["location", "year"], how="left")
         df_fires_all["year"] = df_fires_all["year"].astype(int)
-        print(df_fires_all)
+        #print(df_fires_all)
         df_fires_all['fire_count'] = pd.to_numeric(df_fires_all['fire_count'].replace("s/d", np.nan), errors='coerce')
         df_fires_all['location'] = df_fires_all['location'].apply(clean_coldata)
         df_fires_all = df_fires_all[~df_fires_all['location'].str.contains("CABA", case=False)]
@@ -314,7 +232,6 @@ def load_wildfires_data():
             return
         
          # Insert data into fires_by_months
-        
         fires_monthwise_url  = "https://ciam.ambiente.gob.ar/dt_csv.php?dt_id=312"
         try:
             df_fires_monthwise = pd.read_csv(fires_monthwise_url, sep=";", encoding="utf-8",low_memory=False)            
@@ -328,7 +245,7 @@ def load_wildfires_data():
         # all twelve months for the original dataframe should be included in the melted dataframe
         df_fires_monthwise = df_fires_monthwise.melt(id_vars=["month"], value_vars=["year_2017", "year_2018", "year_2019", "year_2020", "year_2021", "year_2022", "year_2023", "year_2024", "year_2025"], var_name="year", value_name="fire_count")
         df_fires_monthwise["year"] = df_fires_monthwise["year"].str.extract(r'(\d{4})')
-        print("Fires Monthwise Data2:", df_fires_monthwise)
+        #print("Fires Monthwise Data2:", df_fires_monthwise)
         # convert month names to month numbers
         df_fires_monthwise["month"] = df_fires_monthwise["month"].str.lower().str.strip()
         month_mapping = {
@@ -390,8 +307,6 @@ def load_wildfires_data():
         except Exception as e:
             print(f"Error inserting into final fires_by_months table: {e}")
             return
-    # finally:
-    #     print("Finalizing load_fires_data")
     except Exception as e:
             print(f"General error in load_wildfires_data: {e}")
             return
@@ -1498,7 +1413,7 @@ def insert_hydro_droughts_forecast():
             ORDER BY s.station_name, h.daily_date
         """
         hydro_df = pd.read_sql(hydro_query, engine)
-        hydro_df['daily_date'] = pd.to_datetime(hydro_df['daily_date'], format='%d-%m-%Y')
+        hydro_df['daily_date'] = pd.to_datetime(hydro_df['daily_date'], format='%Y-%m-%d', errors='coerce')
 
         stations = hydro_df['station_code'].unique()
         inserts = []
@@ -1554,7 +1469,7 @@ def insert_hydro_droughts_forecast():
                 risk_level = row.iloc[0]['category'] if not row.empty else None
 
                 inserts.append({
-                    'daily_date': forecast_date.strftime('%d-%m-%Y'),
+                    'daily_date': forecast_date.strftime('%Y-%m-%d'),
                     'station_code': code,
                     'value_index': forecast_value,
                     'risk_level': risk_level,
@@ -1733,7 +1648,6 @@ def insert_metero_droughts_forecast():
 
 try:
     # db_url = f"postgresql://postgres:Database%40123@34.100.141.55:5432/HO_IFRC_ARG"
-    # db_url = f"postgresql://postgres:Database%40123@34.100.141.55:5432/ho_ifrc_arg"
     db_url = f"postgresql://postgres:Database%40123@34.100.141.55:5432/demo"
     engine = create_engine(db_url)
 except Exception as e:
