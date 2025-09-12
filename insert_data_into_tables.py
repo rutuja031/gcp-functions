@@ -49,13 +49,101 @@ def clean_coldata(name):
         print(f"Error cleaning column data: {e}")
         return name
 
-def load_stations_data():   
+# def load_stations_data():   
+#     try:
+#         st_datafile = "gs://datafiles_bucket/STATIONS _ estaciones smn PAIS.xlsx"  ## GCS path
+#         st_threshold = "gs://datafiles_bucket/HEAT_COLD WAVES - OLAS_CALOR-FRIO.xlsx" ## GCS path
+#         try:
+#             df_st = pd.read_excel(st_datafile, sheet_name='estaciones smn')[["NRO INT", "ESTACION", "PROVINCIA", "LAT ", "LONG", "ALT (m)"]].dropna()
+#             df_st.columns = ["station_code", "station_name", "province_name", "latitude", "longitude", "altitude"]
+#         except Exception as e:
+#             print(f"Error reading stations Excel file: {e}")
+#             return
+
+#         try:
+#             df_th = pd.read_excel(st_threshold, sheet_name='estaciones')[["omm_id", "p90_tmax", "p90_tmin", "p10_tmax","p10_tmin"]].dropna()
+#             df_th.columns = ["station_code", "heat_max", "heat_min", "cold_max", "cold_min"]
+#         except Exception as e:
+#             print(f"Error reading threshold Excel file: {e}")
+#             return
+
+#         create_table_sql = """
+#         DROP TABLE IF EXISTS stg_stations;  
+#         CREATE TABLE IF NOT EXISTS stg_stations (
+#             station_code 	VARCHAR(20) PRIMARY KEY,
+#             station_name 	VARCHAR(255) NOT NULL,
+#             province_name 	VARCHAR(100) NOT NULL,
+#             latitude 		DOUBLE PRECISION,
+#             longitude 		DOUBLE PRECISION,
+#             altitude 		NUMERIC,
+#             cold_max 		NUMERIC,
+#             cold_min 		NUMERIC,
+#             heat_max 		NUMERIC,
+#             heat_min 		NUMERIC
+#         );
+#         """
+#         try:
+#             with engine.begin() as conn:
+#                 conn.execute(text(create_table_sql))    
+#                 conn.commit()
+#         except Exception as e:
+#             print(f"Error creating staging table: {e}")
+#             return
+
+#         try:
+#             df_st = df_st.merge(df_th, on="station_code", how="left")
+#             df_st = normalize_columns(df_st)
+#         except Exception as e:
+#             print(f"Error merging station dataframes: {e}")
+#             return
+
+#         try:
+#             df_st.to_sql("stg_stations", engine, if_exists="append", index=False)
+#         except Exception as e:
+#             print(f"Error writing to staging table: {e}")
+#             return
+
+#         insert_final_table_sql ="""
+#                 INSERT INTO stations (station_code, station_name, province_code, 
+#                             latitude, longitude, altitude, cold_max, cold_min, heat_max, heat_min)
+#                 SELECT station_code, station_name, (SELECT province_code FROM provinces WHERE UPPER(province_name) = UPPER(stg_stations.province_name)) AS province_code, 
+#                             latitude, longitude, altitude, cold_max, cold_min, heat_max, heat_min
+#                 FROM stg_stations
+#             """
+#         try:
+#             with engine.begin() as conn:
+#                 result = conn.execute(text("SELECT COUNT(*) FROM stg_stations"))
+#                 count = result.scalar()
+#                 print("Province Names:", df_st['province_name'].unique())
+#                 if count > 0:
+#                     # Delete data from Stations before inserting the records
+#                     conn.execute(text("DELETE FROM stations"))
+#                     conn.execute(text(insert_final_table_sql ))
+#                 conn.execute(text("TRUNCATE TABLE stg_stations"))
+#                 conn.commit()
+#                 conn.close()
+#         except Exception as e:
+#             print(f"Error inserting into final stations table: {e}")
+#             return
+
+#         print("Stations Data Inserted")
+#     except Exception as e:
+#         print(f"General error in load_stations_data: {e}")
+#         return
+    
+#     # finally:
+#     #     print("Finalizing load_stations_data")
+
+def load_stations_data():
     try:
         st_datafile = "gs://datafiles_bucket/STATIONS _ estaciones smn PAIS.xlsx"  ## GCS path
         st_threshold = "gs://datafiles_bucket/HEAT_COLD WAVES - OLAS_CALOR-FRIO.xlsx" ## GCS path
         try:
             df_st = pd.read_excel(st_datafile, sheet_name='estaciones smn')[["NRO INT", "ESTACION", "PROVINCIA", "LAT ", "LONG", "ALT (m)"]].dropna()
             df_st.columns = ["station_code", "station_name", "province_name", "latitude", "longitude", "altitude"]
+            df_st_hydro = pd.read_excel(st_datafile, sheet_name='hydro droughts stations')[["Code", "Name", "Province"]].dropna()
+            df_st_hydro.columns = ["station_code", "station_name", "province_name"]
+            df_st_hydro = normalize_columns(df_st_hydro)
         except Exception as e:
             print(f"Error reading stations Excel file: {e}")
             return
@@ -99,6 +187,7 @@ def load_stations_data():
 
         try:
             df_st.to_sql("stg_stations", engine, if_exists="append", index=False)
+            df_st_hydro.to_sql("stg_stations", engine, if_exists="append", index=False)
         except Exception as e:
             print(f"Error writing to staging table: {e}")
             return
@@ -129,10 +218,7 @@ def load_stations_data():
         print("Stations Data Inserted")
     except Exception as e:
         print(f"General error in load_stations_data: {e}")
-        return
-    
-    # finally:
-    #     print("Finalizing load_stations_data")
+        return   
 
 def load_wildfires_data():
     try:
@@ -589,7 +675,7 @@ def load_temperature_pressure_data():
         
 def insert_daily_temperature():  ####### for daily temperature
     try:
-        print("Starting daily temperature data fetch...")
+        #print("Starting daily temperature data fetch...")
         url = "https://ssl.smn.gob.ar/dpd/zipopendata.php?dato=regtemp"
         headers = {"User-Agent": "Mozilla/5.0"}
         response = requests.get(url, headers=headers)
@@ -838,14 +924,14 @@ def insert_forecast_temperature():   ## for daily
             with engine.begin() as conn:
                 conn.execute(text(insert_query), records)
 
-            print("Forecasts inserted into temperature table.")
+            print("Forecast inserted into temperature table.")
         else:
             print("No forecasts generated — check data availability.")
 
     except Exception as e:
         print(f"Error in insert_forecast_temperature: {e}")
 
-def insert_forecast_pressure():  ## for daily
+def insert_forecast_pressure():  
     try:
         forecast_days = 7
         lags = 7
@@ -972,7 +1058,7 @@ def insert_forecast_pressure():  ## for daily
                         'created_at': datetime.now()
                     })
 
-            print("Pressure forecasts inserted into pressure table with measurement_type = 'F'.")
+            print("Forecast inserted into pressure table.")
         else:
             print("No pressure forecasts generated—check for missing or insufficient data.")
 
@@ -1501,9 +1587,9 @@ def insert_hydro_droughts_forecast():
                         'created_by': row['created_by'],
                         'created_at': row['created_at']
                     })
-            print(f"Inserted {len(result_df)} forecast records (8 per station).")
+            print(f"Forecasts inserted into hydrological_droughts")
         else:
-            print("No forecasts inserted (insufficient history for all stations).")
+            print("No forecasts inserted into hydrological_droughts(insufficient history).")
 
     except Exception as e:
         print(f"Error during hydrological drought forecast insertion: {e}")
@@ -1640,14 +1726,15 @@ def insert_metero_droughts_forecast():
             except Exception as e:
                 print(f"Error inserting forecast records: {e}")
         else:
-            print("No forecasts generated.")
+            print("No forecast inserted into meterological_droughts")
 
     except Exception as e:
         print(f"Fatal error in insert_metero_droughts_forecast: {e}")
 
 try:
     # db_url = f"postgresql://postgres:Database%40123@34.100.141.55:5432/HO_IFRC_ARG"
-    db_url = f"postgresql://postgres:Database%40123@34.100.141.55:5432/ho_ifrc_arg"
+    # db_url = f"postgresql://postgres:Database%40123@34.100.141.55:5432/ho_ifrc_arg"
+    db_url = f"postgresql://postgres:Database%40123@34.100.141.55:5432/demo"
     engine = create_engine(db_url)
 except Exception as e:
     print(f"Error creating database engine: {e}")
